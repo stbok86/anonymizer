@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+python-docx
+lxml
+openpyxl
+regex
+python-multipart
