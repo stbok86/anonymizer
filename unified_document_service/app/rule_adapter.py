@@ -24,101 +24,126 @@ class RuleEngineAdapter:
         
     def _load_patterns(self) -> Dict[str, List[Dict]]:
         """
-        Загрузка паттернов из файла или использование встроенных
+        Загрузка паттернов ТОЛЬКО из XLSX файла
         
         Returns:
             Словарь с паттернами по категориям
         """
-        patterns = {
-            'phone': [
-                {
-                    'pattern': r'\b\+?7[-\s]?\(?9\d{2}\)?[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}\b',
-                    'description': 'Российский мобильный номер',
-                    'confidence': 0.95
-                },
-                {
-                    'pattern': r'\b\+?7[-\s]?\(?\d{3}\)?[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}\b',
-                    'description': 'Российский телефонный номер',
-                    'confidence': 0.9
-                },
-                {
-                    'pattern': r'\b8[-\s]?\(?9\d{2}\)?[-\s]?\d{3}[-\s]?\d{2}[-\s]?\d{2}\b',
-                    'description': 'Российский мобильный (8-ка)',
-                    'confidence': 0.9
-                }
-            ],
-            'email': [
-                {
-                    'pattern': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-                    'description': 'Email адрес',
-                    'confidence': 0.98
-                }
-            ],
-            'passport': [
-                {
-                    'pattern': r'\b\d{4}[-\s]?\d{6}\b',
-                    'description': 'Серия и номер паспорта РФ',
-                    'confidence': 0.85
-                },
-                {
-                    'pattern': r'\b\d{2}[-\s]?\d{2}[-\s]?\d{6}\b',
-                    'description': 'Паспорт РФ с разделителями',
-                    'confidence': 0.8
-                }
-            ],
-            'inn': [
-                {
-                    'pattern': r'\b\d{10}\b',
-                    'description': 'ИНН физического лица (10 цифр)',
-                    'confidence': 0.7
-                },
-                {
-                    'pattern': r'\b\d{12}\b',
-                    'description': 'ИНН юридического лица (12 цифр)',
-                    'confidence': 0.7
-                }
-            ],
-            'snils': [
-                {
-                    'pattern': r'\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b',
-                    'description': 'СНИЛС',
-                    'confidence': 0.9
-                }
-            ],
-            'name': [
-                {
-                    'pattern': r'\b[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)?\b',
-                    'description': 'ФИО на русском языке',
-                    'confidence': 0.6
-                }
-            ]
-        }
+        print(f"🔍 [INFO] Загружаем паттерны из: {self.patterns_file}")
         
-        # Попытка загрузить дополнительные паттерны из файла
+        # Инициализируем пустой словарь паттернов
+        patterns = {}
+        
+        # Загружаем паттерны ТОЛЬКО из файла
         try:
             if self.patterns_file and pd is not None:
-                df = pd.read_excel(self.patterns_file)
-                # Добавляем паттерны из файла к встроенным
-                for _, row in df.iterrows():
-                    category = row.get('category', 'unknown').lower()
-                    pattern = row.get('pattern', '')
-                    description = row.get('description', '')
-                    confidence = float(row.get('confidence', 0.5))
+                print(f"🔍 [DEBUG] Pandas доступен, пытаемся загрузить файл: {self.patterns_file}")
+                import os
+                
+                # Проверяем существование файла
+                if not os.path.exists(self.patterns_file):
+                    print(f"❌ [ERROR] Файл паттернов не найден: {self.patterns_file}")
+                    print(f"🔍 [DEBUG] Проверяем относительный путь...")
+                    # Пробуем найти файл относительно текущего модуля
+                    current_dir = os.path.dirname(os.path.abspath(__file__))
+                    relative_path = os.path.join(current_dir, "..", self.patterns_file)
+                    absolute_path = os.path.abspath(relative_path)
+                    print(f"🔍 [DEBUG] Пробуем путь: {absolute_path}")
                     
-                    if category not in patterns:
-                        patterns[category] = []
+                    if os.path.exists(absolute_path):
+                        self.patterns_file = absolute_path
+                        print(f"✅ [SUCCESS] Файл найден по пути: {self.patterns_file}")
+                    else:
+                        print(f"❌ [ERROR] Файл не найден и по относительному пути: {absolute_path}")
+                        print("🔍 [DEBUG] Используем только встроенные паттерны")
+                        return patterns
+                
+                # Определяем тип файла по расширению
+                file_ext = os.path.splitext(self.patterns_file.lower())[1]
+                print(f"🔍 [DEBUG] Расширение файла: {file_ext}")
+                
+                # Особая обработка: если файл .xlsx не существует как Excel, пробуем как CSV
+                if file_ext == '.xlsx' and not self._is_valid_excel(self.patterns_file):
+                    print(f"🔍 [DEBUG] Файл {self.patterns_file} не является валидным Excel, пробуем как CSV...")
+                    try:
+                        df = pd.read_csv(self.patterns_file)
+                        print(f"✅ [SUCCESS] Загружены паттерны из файла {self.patterns_file} как CSV")
+                    except Exception as csv_e:
+                        print(f"❌ [ERROR] Не удалось прочитать как CSV: {csv_e}")
+                        df = None
+                elif file_ext == '.csv':
+                    print(f"🔍 [DEBUG] Загружаем CSV файл...")
+                    df = pd.read_csv(self.patterns_file)
+                    print(f"✅ [SUCCESS] Загружены паттерны из CSV файла: {self.patterns_file}")
+                elif file_ext in ['.xlsx', '.xls']:
+                    print(f"🔍 [DEBUG] Загружаем Excel файл...")
+                    df = pd.read_excel(self.patterns_file)
+                    print(f"✅ [SUCCESS] Загружены паттерны из Excel файла: {self.patterns_file}")
+                else:
+                    print(f"❌ [ERROR] Неподдерживаемый формат файла: {file_ext}")
+                    df = None
+                
+                if df is not None:
+                    print(f"🔍 [DEBUG] DataFrame создан, строк: {len(df)}")
+                    print(f"🔍 [DEBUG] Столбцы DataFrame: {list(df.columns)}")
                     
-                    patterns[category].append({
-                        'pattern': pattern,
-                        'description': description,
-                        'confidence': confidence
-                    })
+                    # Добавляем паттерны из файла к встроенным
+                    patterns_added = 0
+                    for i, (_, row) in enumerate(df.iterrows()):
+                        category = row.get('category', 'unknown').lower()
+                        pattern = row.get('pattern', '')
+                        description = row.get('description', '')
+                        confidence = float(row.get('confidence', 0.5))
+                        
+                        print(f"🔍 [DEBUG] Строка {i+1}: category={category}, pattern='{pattern[:50]}...', confidence={confidence}")
+                        
+                        if pattern:  # Добавляем только если паттерн не пустой
+                            if category not in patterns:
+                                patterns[category] = []
+                                print(f"🔍 [DEBUG] Создана новая категория: {category}")
+                            
+                            patterns[category].append({
+                                'pattern': pattern,
+                                'description': description,
+                                'confidence': confidence
+                            })
+                            patterns_added += 1
+                    
+                    print(f"✅ [SUCCESS] Добавлено {patterns_added} паттернов из файла")
+                    print(f"🔍 [DEBUG] Итоговое количество категорий: {len(patterns)}")
+                    for category, patterns_list in patterns.items():
+                        print(f"🔍 [DEBUG]   {category}: {len(patterns_list)} правил")
+                        
+            else:
+                if not self.patterns_file:
+                    print(f"❌ [ERROR] Путь к файлу паттернов не указан")
+                if pd is None:
+                    print(f"❌ [ERROR] Pandas не доступен")
+                
+                print("❌ [ERROR] Встроенные паттерны удалены! Все правила должны быть в XLSX файле!")
+                print("🚨 [ERROR] Система не может работать без файла паттернов!")
+                return {}
                     
         except Exception as e:
-            print(f"Не удалось загрузить паттерны из файла {self.patterns_file}: {e}")
-            print("Используются встроенные паттерны")
+            print(f"❌ [ERROR] Не удалось загрузить паттерны из файла {self.patterns_file}: {e}")
+            import traceback
+            traceback.print_exc()
+            print("❌ [ERROR] Встроенные паттерны удалены! Все правила должны быть в XLSX файле!")
+            print("🚨 [ERROR] Система не может работать без файла паттернов!")
+            
+            # Возвращаем пустой словарь - система должна требовать корректный файл
+            return {}
         
         return patterns
+    
+    def _is_valid_excel(self, file_path: str) -> bool:
+        """Проверяет, является ли файл валидным Excel файлом"""
+        try:
+            # Пробуем прочитать как Excel
+            pd.read_excel(file_path, nrows=1)
+            return True
+        except Exception:
+            return False
     
     def apply_rules_to_blocks(self, blocks: List[Dict]) -> List[Dict]:
         """
@@ -146,11 +171,9 @@ class RuleEngineAdapter:
                 # Объединяем результаты
                 all_matches = regex_matches + nlp_matches
                 
-                # Удаляем дубликаты по позиции
-                unique_matches = self._remove_duplicate_matches(all_matches)
-                
-                if unique_matches:
-                    processed_block['sensitive_patterns'] = unique_matches
+                # НЕТ удаления дубликатов - паттерны должны быть написаны правильно!
+                if all_matches:
+                    processed_block['sensitive_patterns'] = all_matches
             
             processed_blocks.append(processed_block)
         
@@ -241,7 +264,7 @@ class RuleEngineAdapter:
     
     def _remove_duplicate_matches(self, matches: List[Dict]) -> List[Dict]:
         """
-        Удаление дублирующихся совпадений по позиции
+        Удаление дублирующихся совпадений по позиции с приоритизацией по длине числа
         
         Args:
             matches: Список совпадений
@@ -250,18 +273,39 @@ class RuleEngineAdapter:
             Список уникальных совпадений
         """
         unique_matches = []
-        seen_positions = set()
+        seen_positions = {}  # позиция -> лучший match
         
-        # Сортируем по уверенности (убывание)
-        matches.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+        # Сортируем по приоритету: длина числа (убывание), затем уверенность (убывание)
+        def match_priority(match):
+            value = match.get('original_value', '')
+            # Считаем только цифры для определения длины
+            digit_length = len(''.join(filter(str.isdigit, value)))
+            confidence = match.get('confidence', 0)
+            return (digit_length, confidence)
+        
+        matches.sort(key=match_priority, reverse=True)
+        
+        print(f"🔍 [DEBUG] Сортировка совпадений по приоритету:")
+        for i, match in enumerate(matches):
+            value = match.get('original_value', '')
+            digit_length = len(''.join(filter(str.isdigit, value)))
+            confidence = match.get('confidence', 0)
+            category = match.get('category', 'unknown')
+            print(f"   {i+1}. {category.upper()}: '{value}' (цифр: {digit_length}, уверенность: {confidence})")
         
         for match in matches:
             position = match.get('position', {})
             pos_key = (position.get('start', 0), position.get('end', 0))
             
             if pos_key not in seen_positions:
-                seen_positions.add(pos_key)
+                # Первое совпадение для этой позиции - принимаем
+                seen_positions[pos_key] = match
                 unique_matches.append(match)
+                print(f"✅ [DEBUG] Принято: {match.get('category', 'unknown').upper()} '{match.get('original_value', '')}' (позиция {pos_key})")
+            else:
+                # Уже есть совпадение для этой позиции - отклоняем
+                existing = seen_positions[pos_key]
+                print(f"❌ [DEBUG] Отклонено: {match.get('category', 'unknown').upper()} '{match.get('original_value', '')}' (дубликат {existing.get('category', 'unknown').upper()})")
         
         return unique_matches
     
@@ -273,13 +317,14 @@ class RuleEngineAdapter:
             text: Текст для анализа
             
         Returns:
-            Список найденных элементов
+            Список найденных элементов (БЕЗ удаления дубликатов - паттерны должны быть корректными!)
         """
         regex_matches = self._find_regex_matches(text)
         nlp_matches = self._find_nlp_matches(text)
         
         all_matches = regex_matches + nlp_matches
-        return self._remove_duplicate_matches(all_matches)
+        # НЕТ удаления дубликатов - правила должны быть написаны правильно!
+        return all_matches
     
     def generate_report(self, processed_blocks: List[Dict]) -> Dict[str, Any]:
         """

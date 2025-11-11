@@ -54,20 +54,26 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
     """
     Анализ документа: парсинг → поиск чувствительных данных (без анонимизации)
     """
+    print(f"🔍 [DEBUG] analyze_document вызван с patterns_file: {patterns_file}")
+    
     # Сохраняем загруженный файл
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
     
     try:
+        print(f"🔍 [DEBUG] Загружен файл: {file.filename}")
+        
         # ЭТАП 1: Загрузка документа
         doc = Document(tmp_path)
         
         # ЭТАП 2: Извлечение блоков
         builder = BlockBuilder()
         blocks = builder.build_blocks(doc)
+        print(f"🔍 [DEBUG] Извлечено блоков: {len(blocks)}")
         
         # ЭТАП 3: Поиск чувствительных данных
+        print(f"🔍 [DEBUG] Начинаем поиск чувствительных данных с файлом паттернов: {patterns_file}")
         rule_engine = RuleEngineAdapter(patterns_file)
         processed_blocks = rule_engine.apply_rules_to_blocks(blocks)
         

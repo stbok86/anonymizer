@@ -148,26 +148,34 @@ class FormatterApplier:
             original_value = replacement.get('original_value', '')
             position = replacement.get('position', {})
             
-            if not element or not original_value:
+            if element is None or not original_value:
+                return False
+                
+            # Дополнительная проверка для None значений
+            if original_value is None:
                 return False
             
-            # Генерируем замещающее значение
+            # Генерируем замещающее значение с использованием существующего UUID
             replacement_value = self._generate_replacement_value(
                 original_value, 
-                replacement.get('category', 'unknown')
+                replacement.get('category', 'unknown'),
+                replacement.get('uuid')
             )
             
             # Применяем замену в зависимости от типа элемента
-            if hasattr(element, 'text'):
+            if hasattr(element, 'rows'):
+                # Таблица (проверяем rows, так как у таблиц нет прямого атрибута cells)
+                return self._replace_in_table(element, original_value, replacement_value)
+            elif hasattr(element, 'text'):
                 # Параграф
                 return self._replace_in_paragraph(element, original_value, replacement_value, position)
-            elif hasattr(element, 'cells'):
-                # Таблица
-                return self._replace_in_table(element, original_value, replacement_value)
             else:
                 # Общий случай - пытаемся заменить текст
                 current_text = getattr(element, 'text', '')
-                if original_value in current_text:
+                # Дополнительная проверка для None
+                if current_text is None:
+                    current_text = ''
+                if original_value and original_value in current_text:
                     new_text = current_text.replace(original_value, replacement_value)
                     element.text = new_text
                     return True
@@ -193,7 +201,11 @@ class FormatterApplier:
         """
         try:
             # Простая замена текста
-            if original_value in paragraph.text:
+            paragraph_text = getattr(paragraph, 'text', '')
+            if paragraph_text is None:
+                paragraph_text = ''
+                
+            if original_value and original_value in paragraph_text:
                 # Сохраняем форматирование первого run
                 if paragraph.runs:
                     first_run = paragraph.runs[0]
@@ -229,13 +241,18 @@ class FormatterApplier:
         try:
             replacement_made = False
             
-            for row in table.rows:
-                for cell in row.cells:
-                    if original_value in cell.text:
+            for row_idx, row in enumerate(table.rows):
+                for cell_idx, cell in enumerate(row.cells):
+                    # Безопасная проверка текста ячейки
+                    cell_text = getattr(cell, 'text', '') or ''
+                    
+                    if original_value and original_value in cell_text:
                         # Заменяем в каждом параграфе ячейки
-                        for paragraph in cell.paragraphs:
-                            if original_value in paragraph.text:
-                                paragraph.text = paragraph.text.replace(original_value, replacement_value)
+                        for para_idx, paragraph in enumerate(cell.paragraphs):
+                            paragraph_text = getattr(paragraph, 'text', '') or ''
+                            
+                            if original_value and original_value in paragraph_text:
+                                paragraph.text = paragraph_text.replace(original_value, replacement_value)
                                 replacement_made = True
                                 
                                 # Применяем выделение
@@ -243,46 +260,35 @@ class FormatterApplier:
                                     for run in paragraph.runs:
                                         if replacement_value in run.text:
                                             run.font.highlight_color = self.replacement_color
-            
+                
             return replacement_made
             
         except Exception as e:
             print(f"Ошибка замены в таблице: {str(e)}")
             return False
     
-    def _generate_replacement_value(self, original_value: str, category: str) -> str:
+    def _generate_replacement_value(self, original_value: str, category: str, existing_uuid: str = None) -> str:
         """
         Генерация замещающего значения на основе категории
         
         Args:
             original_value: Исходное значение
             category: Категория найденных данных
+            existing_uuid: Существующий UUID из анализа (если есть)
             
         Returns:
             Замещающее значение
         """
-        # Генерируем UUID для замены
-        replacement_uuid = str(uuid.uuid4())[:8].upper()
-        
-        # Выбираем префикс в зависимости от категории
-        if category.lower() in ['name', 'person', 'имя', 'фио']:
-            prefix = "PERSON"
-        elif category.lower() in ['phone', 'телефон', 'номер']:
-            prefix = "PHONE" 
-        elif category.lower() in ['email', 'почта']:
-            prefix = "EMAIL"
-        elif category.lower() in ['address', 'адрес']:
-            prefix = "ADDRESS"
-        elif category.lower() in ['passport', 'паспорт']:
-            prefix = "PASSPORT"
-        elif category.lower() in ['inn', 'инн']:
-            prefix = "INN"
-        elif category.lower() in ['snils', 'снилс']:
-            prefix = "SNILS"
+        # Используем существующий UUID или генерируем новый
+        if existing_uuid:
+            # Используем полный UUID как есть
+            replacement_uuid = existing_uuid
         else:
-            prefix = "DATA"
+            # Генерируем новый UUID для замены (только если не передан существующий)
+            replacement_uuid = str(uuid.uuid4())
         
-        return f"[{prefix}_{replacement_uuid}]"
+        # Возвращаем только UUID без префиксов
+        return replacement_uuid
     
     def generate_replacement_report(self, replacements: List[Dict]) -> Dict[str, Any]:
         """

@@ -73,7 +73,7 @@ def step1_upload_document():
         patterns_file = st.text_area(
             "Файл паттернов", 
             value=os.path.join(UNIFIED_SERVICE_PATH, "patterns/sensitive_patterns.xlsx"),
-            help="Путь к Excel файлу с правилами поиска",
+            help="Путь к Excel/CSV файлу с правилами поиска",
             height=60,
             key="step1_patterns_file"
         )
@@ -82,8 +82,11 @@ def step1_upload_document():
         if st.button("🔍 Найти файл паттернов автоматически", key="step1_find_patterns"):
             possible_paths = [
                 os.path.join(UNIFIED_SERVICE_PATH, "patterns", "sensitive_patterns.xlsx"),
+                os.path.join(UNIFIED_SERVICE_PATH, "patterns", "sensitive_patterns_full.csv"),
                 os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "unified_document_service", "patterns", "sensitive_patterns.xlsx")),
-                "C:\\Projects\\Anonymizer\\unified_document_service\\patterns\\sensitive_patterns.xlsx"
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "unified_document_service", "patterns", "sensitive_patterns_full.csv")),
+                "C:\\Projects\\Anonymizer\\unified_document_service\\patterns\\sensitive_patterns.xlsx",
+                "C:\\Projects\\Anonymizer\\unified_document_service\\patterns\\sensitive_patterns_full.csv"
             ]
             
             for path in possible_paths:
@@ -388,9 +391,21 @@ def generate_replacements_table(approved_items, original_filename):
     replacements_data = []
     
     for i, item in enumerate(approved_items, 1):
-        # Генерируем идентификатор замены в том же формате что использует система
-        category = item.get('category', 'DATA').upper()
-        replacement_id = f"[{category}_{str(i).zfill(3)}]"
+        # Используем полный UUID из элемента
+        existing_uuid = item.get('uuid', '')
+        category = item.get('category', 'DATA')
+        
+        # Генерируем замену только с UUID (без префиксов)
+        if existing_uuid:
+            # Используем полный UUID как есть
+            replacement_uuid = existing_uuid
+        else:
+            # Fallback - генерируем новый UUID если нет существующего
+            import uuid as uuid_module
+            replacement_uuid = str(uuid_module.uuid4())
+        
+        # Используем только UUID без префиксов
+        replacement_id = replacement_uuid
         
         replacements_data.append({
             '№': i,
