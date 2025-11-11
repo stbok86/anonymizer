@@ -283,6 +283,74 @@ async def anonymize_full(file: UploadFile = File(...),
         if os.path.exists(input_path):
             os.remove(input_path)
 
+@app.post("/anonymize_selected")
+async def anonymize_selected(file: UploadFile = File(...), selected_items: str = None):
+    """
+    Селективная анонимизация документа на основе выбранных пользователем элементов
+    """
+    if not selected_items:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Не указаны элементы для анонимизации"}
+        )
+    
+    # Сохраняем загруженный файл
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+    
+    # Создаем путь для результата
+    output_path = tmp_path.replace(".docx", "_anonymized.docx")
+    
+    try:
+        # Парсим выбранные элементы из JSON
+        import json
+        selected_items_list = json.loads(selected_items)
+        
+        # Инициализируем полный анонимизатор
+        anonymizer = FullAnonymizer()
+        
+        # Выполняем селективную анонимизацию
+        result = anonymizer.anonymize_selected_items(
+            input_path=tmp_path,
+            output_path=output_path,
+            selected_items=selected_items_list
+        )
+        
+        if result['status'] == 'success':
+            # Кодируем файл в base64 для прямого скачивания
+            with open(output_path, 'rb') as f:
+                file_base64 = base64.b64encode(f.read()).decode('utf-8')
+            
+            result['anonymized_document_base64'] = file_base64
+            result['download_url'] = f"/download_file/{os.path.basename(output_path)}"
+            result['filename'] = file.filename.replace('.docx', '_anonymized.docx')
+            
+            return JSONResponse(content=result)
+        else:
+            return JSONResponse(
+                status_code=500,
+                content=result
+            )
+            
+    except json.JSONDecodeError:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Некорректный формат данных selected_items"}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": f"Ошибка селективной анонимизации: {str(e)}"}
+        )
+    finally:
+        # Очищаем временные файлы
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        if os.path.exists(output_path):
+            # Файл удалится автоматически через некоторое время или при перезапуске
+            pass
+
 @app.get("/download_file/{filename}")
 async def download_file(filename: str):
     """Универсальное скачивание файлов (DOCX, Excel, JSON)"""

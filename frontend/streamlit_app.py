@@ -58,6 +58,8 @@ def initialize_session_state():
         st.session_state.patterns_file = ""
     if 'user_comments' not in st.session_state:
         st.session_state.user_comments = {}
+    if 'anonymized_files' not in st.session_state:
+        st.session_state.anonymized_files = []
 
 def step1_upload_document():
     """Шаг 1: Загрузка документа и анализ"""
@@ -221,7 +223,7 @@ def step2_review_findings():
                 )
             },
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             key="found_data_editor"
         )
         
@@ -275,11 +277,46 @@ def step2_review_findings():
         st.metric("Выбрано для замены", f"{selected_count}/{len(found_data)}")
     with col3:
         if st.button("🔒 Подтвердить анонимизацию", type="primary", disabled=(selected_count == 0), key="step2_confirm"):
-            with st.spinner("🔄 Выполняем анонимизацию..."):
-                # Здесь будет вызов финальной анонимизации
-                st.success("✅ Анонимизация завершена!")
-                st.session_state.current_step = 3
-                st.rerun()
+            with st.spinner("🔄 Выполняем анонимизацию и генерируем файлы..."):
+                # Получаем одобренные пользователем элементы для анонимизации
+                approved_items = [item for item in st.session_state.found_data if item.get('approved', False)]
+                
+                if not approved_items:
+                    st.warning("⚠️ Не выбрано ни одного элемента для анонимизации")
+                else:
+                    # Вызываем API для полной анонимизации
+                    anonymized_files = anonymize_document_full_api(
+                        st.session_state.uploaded_file, 
+                        approved_items,
+                        st.session_state.patterns_file
+                    )
+                    
+                    # Генерируем таблицу замен
+                    replacements_excel = generate_replacements_table(
+                        approved_items, 
+                        st.session_state.uploaded_file.name
+                    )
+                    
+                    if anonymized_files:
+                        # Добавляем таблицу замен к файлам для скачивания
+                        replacements_filename = f"Replacements_{st.session_state.uploaded_file.name.rsplit('.', 1)[0]}.xlsx"
+                        
+                        anonymized_files.append({
+                            'type': 'replacements',
+                            'label': '📋 Таблица замен',
+                            'data': replacements_excel,
+                            'filename': replacements_filename,
+                            'mime': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                        })
+                        
+                        # Сохраняем сгенерированные файлы в session_state
+                        st.session_state.anonymized_files = anonymized_files
+                        
+                        st.success("✅ Анонимизация завершена! Файлы готовы для скачивания.")
+                        st.session_state.current_step = 3
+                        st.rerun()
+                    else:
+                        st.error("❌ Ошибка при генерации файлов")
 
 def step3_download_results():
     """Шаг 3: Скачивание результатов"""
@@ -287,50 +324,96 @@ def step3_download_results():
     
     st.success("✅ Документ успешно анонимизирован!")
     
-    # Здесь будут ссылки для скачивания
-    st.markdown("### 📁 Файлы для скачивания:")
-    st.markdown("- 📄 Анонимизированный документ")
-    st.markdown("- 📊 Excel отчет с заменами")
-    
-    # Кнопка для скачивания файлов
-    st.markdown("---")
-    if st.button("📥 Скачать все файлы", type="primary", key="step3_download_files"):
-        with st.spinner("� Генерируем анонимизированные файлы..."):
-            # Получаем одобренные пользователем элементы для анонимизации
-            approved_items = [item for item in st.session_state.found_data if item.get('approved', False)]
-            
-            if not approved_items:
-                st.warning("⚠️ Не выбрано ни одного элемента для анонимизации")
-            else:
-                # Вызываем API для полной анонимизации
-                anonymized_files = anonymize_document_full_api(
-                    st.session_state.uploaded_file, 
-                    approved_items,
-                    st.session_state.patterns_file
+    # Проверяем, есть ли готовые файлы
+    if st.session_state.anonymized_files:
+        st.markdown("### 📁 Файлы готовы для скачивания:")
+        
+        # Разделяем файлы по типу для отображения конкретных кнопок
+        anonymized_doc = None
+        replacements_table = None
+        
+        for file_info in st.session_state.anonymized_files:
+            if file_info['type'] == 'document':
+                anonymized_doc = file_info
+            elif file_info['type'] == 'replacements':
+                replacements_table = file_info
+        
+        # Создаем две колонки для кнопок
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if anonymized_doc:
+                st.download_button(
+                    label="📄 Скачать анонимизированный документ",
+                    data=anonymized_doc['data'],
+                    file_name=anonymized_doc['filename'],
+                    mime=anonymized_doc['mime'],
+                    key="download_document",
+                    width="stretch"
                 )
-                
-                if anonymized_files:
-                    st.success(f"✅ Сгенерировано файлов: {len(anonymized_files)}")
-                    
-                    # Создаем кнопки для скачивания каждого файла
-                    for file_info in anonymized_files:
-                        st.download_button(
-                            label=file_info['label'],
-                            data=file_info['data'],
-                            file_name=file_info['filename'],
-                            mime=file_info['mime'],
-                            key=f"download_{file_info['type']}"
-                        )
-                else:
-                    st.error("❌ Ошибка при генерации файлов")
+            else:
+                st.info("📄 Анонимизированный документ не готов")
+        
+        with col2:
+            if replacements_table:
+                st.download_button(
+                    label="📋 Скачать таблицу замен",
+                    data=replacements_table['data'],
+                    file_name=replacements_table['filename'],
+                    mime=replacements_table['mime'],
+                    key="download_replacements",
+                    width="stretch"
+                )
+            else:
+                st.info("📋 Таблица замен не готова")
+    else:
+        st.warning("⚠️ Файлы не готовы. Вернитесь на шаг 2 и подтвердите анонимизацию.")
     
+    st.markdown("---")
     if st.button("🔄 Обработать новый документ", key="step3_new_document"):
         # Сброс состояния
         st.session_state.current_step = 1
         st.session_state.uploaded_file = None
         st.session_state.found_data = []
         st.session_state.user_comments = {}
+        st.session_state.anonymized_files = []
         st.rerun()
+
+def generate_replacements_table(approved_items, original_filename):
+    """Генерация Excel таблицы замен в требуемом формате"""
+    import pandas as pd
+    import io
+    
+    # Подготавливаем данные для таблицы
+    replacements_data = []
+    
+    for i, item in enumerate(approved_items, 1):
+        # Генерируем идентификатор замены в том же формате что использует система
+        category = item.get('category', 'DATA').upper()
+        replacement_id = f"[{category}_{str(i).zfill(3)}]"
+        
+        replacements_data.append({
+            '№': i,
+            'Исходные данные': item.get('original_value', ''),
+            'Замена (идентификатор)': replacement_id
+        })
+    
+    # Создаем DataFrame
+    df = pd.DataFrame(replacements_data)
+    
+    # Сохраняем в Excel
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='Замены', index=False)
+        
+        # Настраиваем форматирование
+        worksheet = writer.sheets['Замены']
+        worksheet.column_dimensions['A'].width = 5
+        worksheet.column_dimensions['B'].width = 40
+        worksheet.column_dimensions['C'].width = 30
+    
+    output.seek(0)
+    return output.getvalue()
 
 def analyze_document_api(uploaded_file, patterns_file):
     """Анализ документа через HTTP API"""

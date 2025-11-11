@@ -6,3 +6,5 @@ lxml
 openpyxl
 regex
 python-multipart
+pandas
+requests
