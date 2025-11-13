@@ -1,57 +1,86 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form
+from fastapi.responses import FileResponse
 import requests
 import tempfile
-import shutil
 import os
+from typing import List, Optional
 
 app = FastAPI(title="Document Anonymizer Gateway", version="1.0.0")
 
-# Конфигурация сервисов
-UNIFIED_SERVICE_URL = "http://localhost:8001"
-ORCHESTRATOR_URL = "http://localhost:8002"
-NLP_SERVICE_URL = "http://localhost:8003"
-RULE_ENGINE_URL = "http://localhost:8004"
+# URL сервисов
+UNIFIED_SERVICE_URL = "http://localhost:8009"
+NLP_SERVICE_URL = "http://localhost:8006"
+RULE_ENGINE_URL = "http://localhost:8003"
+ORCHESTRATOR_URL = "http://localhost:8004"
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Document Anonymizer Gateway", 
+        "version": "1.0.0",
+        "services": {
+            "unified": UNIFIED_SERVICE_URL,
+            "nlp": NLP_SERVICE_URL,
+            "rule_engine": RULE_ENGINE_URL,
+            "orchestrator": ORCHESTRATOR_URL
+        }
+    }
 
 @app.get("/health")
-def health():
-    return {"status": "ok", "service": "gateway"}
-
-@app.get("/healthz")
-def healthz():
-    return {"status": "ok"}
-
-@app.get("/readyz")
-def readyz():
-    return {"status": "ready"}
-
-@app.get("/services/status")
-async def services_status():
-    """Проверка статуса всех сервисов"""
-    services = {
-        "unified_document_service": UNIFIED_SERVICE_URL,
-        "orchestrator": ORCHESTRATOR_URL,
-        "nlp_service": NLP_SERVICE_URL,
-        "rule_engine": RULE_ENGINE_URL
+async def health_check():
+    """Проверка здоровья Gateway и всех сервисов"""
+    services_status = {
+        "gateway": "healthy"
     }
     
-    status = {}
+    # Проверяем каждый сервис
+    services = {
+        "unified": f"{UNIFIED_SERVICE_URL}/health",
+        "nlp": f"{NLP_SERVICE_URL}/healthz",
+        "rule_engine": f"{RULE_ENGINE_URL}/healthz",
+        "orchestrator": f"{ORCHESTRATOR_URL}/healthz"
+    }
+    
     for service_name, url in services.items():
         try:
-            response = requests.get(f"{url}/health", timeout=5)
-            status[service_name] = {
-                "status": "ok" if response.status_code == 200 else "error",
-                "url": url,
-                "response_code": response.status_code
-            }
-        except requests.exceptions.RequestException:
-            status[service_name] = {
-                "status": "unavailable",
-                "url": url,
-                "response_code": None
-            }
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                services_status[service_name] = "healthy"
+            else:
+                services_status[service_name] = f"error: {response.status_code}"
+        except requests.exceptions.RequestException as e:
+            services_status[service_name] = f"unavailable: {str(e)}"
     
-    return status
+    return {"status": "ok", "services": services_status}
+
+@app.post("/process_text")
+async def process_text(request_data: dict):
+    """
+    Обработка текста через Rule Engine
+    Проксирование запросов к rule_engine
+    """
+    try:
+        # Пересылаем запрос к rule_engine
+        response = requests.post(
+            f"{RULE_ENGINE_URL}/process_text",
+            json=request_data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Rule Engine error: {response.text}"
+            )
+            
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Service timeout")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Service unavailable: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.post("/analyze_document")
 async def analyze_document(
@@ -59,7 +88,7 @@ async def analyze_document(
     patterns_file: str = Form(default="patterns/sensitive_patterns.xlsx")
 ):
     """
-    Анализ документа без анонимизации - только поиск чувствительных данных
+    Проксирование запроса анализа к unified_document_service
     """
     try:
         # Подготавливаем файлы для пересылки
@@ -71,7 +100,7 @@ async def analyze_document(
             'patterns_file': patterns_file
         }
         
-        # Пересылаем запрос к unified_document_service для анализа
+        # Пересылаем запрос к unified_document_service
         response = requests.post(
             f"{UNIFIED_SERVICE_URL}/analyze_document",
             files=files,
@@ -79,20 +108,24 @@ async def analyze_document(
             timeout=120
         )
         
+        print(f"🔍 [DEBUG] Gateway получил ответ от Unified Service: {response.status_code}")
+        
         if response.status_code == 200:
-            return response.json()
+            result = response.json()
+            print(f"🔍 [DEBUG] Результат от Unified Service: {type(result)}")
+            print(f"🔍 [DEBUG] Ключи в результате: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+            return result
         else:
             raise HTTPException(
-                status_code=response.status_code, 
-                detail=f"Unified service error: {response.text}"
+                status_code=response.status_code,
+                detail=f"Ошибка unified_document_service: {response.text}"
             )
             
-    except requests.exceptions.Timeout:
-        raise HTTPException(status_code=504, detail="Service timeout")
     except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"Service unavailable: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unified Document Service недоступен: {str(e)}"
+        )
 
 @app.post("/anonymize_document")
 async def anonymize_document(
@@ -211,3 +244,70 @@ async def anonymize_full(
             status_code=503,
             detail=f"Unified Document Service недоступен: {str(e)}"
         )
+
+
+# === NLP Service Routes ===
+
+@app.post("/nlp/analyze")
+async def nlp_analyze(request_data: dict):
+    """
+    Анализ текстовых блоков через NLP Service
+    Проксирование запросов от Orchestrator к NLP Service
+    """
+    try:
+        # Пересылаем запрос к NLP Service
+        response = requests.post(
+            f"{NLP_SERVICE_URL}/analyze",
+            json=request_data,
+            timeout=60,
+            headers={"Content-Type": "application/json"}
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"NLP Service error: {response.text}"
+            )
+            
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="NLP Service timeout")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"NLP Service unavailable: {str(e)}")
+
+@app.get("/nlp/health")
+async def nlp_health():
+    """Проверка здоровья NLP Service"""
+    try:
+        response = requests.get(f"{NLP_SERVICE_URL}/healthz", timeout=5)
+        return response.json()
+    except requests.exceptions.RequestException:
+        raise HTTPException(status_code=503, detail="NLP Service unavailable")
+
+@app.get("/nlp/categories")
+async def nlp_categories():
+    """Получение списка категорий из NLP Service"""
+    try:
+        response = requests.get(f"{NLP_SERVICE_URL}/categories", timeout=10)
+        return response.json()
+    except requests.exceptions.RequestException:
+        raise HTTPException(status_code=503, detail="NLP Service unavailable")
+
+@app.post("/nlp/test")
+async def nlp_test(text: str):
+    """Тестовый анализ текста через NLP Service"""
+    try:
+        response = requests.post(
+            f"{NLP_SERVICE_URL}/test",
+            params={"text": text},
+            timeout=30
+        )
+        return response.json()
+    except requests.exceptions.RequestException:
+        raise HTTPException(status_code=503, detail="NLP Service unavailable")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8002)

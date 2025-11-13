@@ -5,6 +5,7 @@ import tempfile
 import shutil
 import os
 import base64
+import requests
 
 try:
     from docx import Document
@@ -17,6 +18,9 @@ except ImportError as e:
     # В production эти модули должны быть доступны
 
 app = FastAPI()
+
+# URL для NLP Service
+NLP_SERVICE_URL = "http://localhost:8006"
 
 @app.get("/health")
 def health():
@@ -77,8 +81,8 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
         rule_engine = RuleEngineAdapter(patterns_file)
         processed_blocks = rule_engine.apply_rules_to_blocks(blocks)
         
-        # Собираем найденные элементы для фронтенда
-        found_items = []
+        # Собираем найденные элементы Rule Engine
+        rule_engine_items = []
         for block in processed_blocks:
             if 'sensitive_patterns' in block:
                 for pattern in block['sensitive_patterns']:
@@ -89,15 +93,87 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
                         'uuid': pattern['uuid'],
                         'position': pattern['position'],
                         'confidence': pattern.get('confidence', 1.0),
-                        'source': 'unified_document_service',
+                        'method': 'regex',  # Rule Engine всегда использует regex
+                        'source': 'Rule Engine',
                         'block_text': block.get('text', block.get('content', 'Контекст недоступен'))
                     }
-                    found_items.append(found_item)
+                    rule_engine_items.append(found_item)
+        
+        print(f"🔍 [DEBUG] Rule Engine нашел: {len(rule_engine_items)} элементов")
+        
+        # ЭТАП 4: NLP анализ тех же блоков
+        nlp_items = []
+        try:
+            print(f"🧠 [DEBUG] Начинаем NLP анализ {len(blocks)} блоков...")
+            
+            # Подготавливаем блоки для NLP Service
+            text_blocks = [
+                {
+                    "content": block.get('text', block.get('content', '')),
+                    "block_id": block.get('block_id', f'block_{i}'),
+                    "block_type": block.get('type', 'text')
+                }
+                for i, block in enumerate(blocks)
+                if block.get('text') or block.get('content')
+            ]
+            
+            if text_blocks:
+                nlp_data = {
+                    "blocks": text_blocks,
+                    "options": {"confidence_threshold": 0.6}
+                }
+                
+                print(f"🧠 [DEBUG] Отправляем в NLP Service {len(text_blocks)} блоков")
+                
+                nlp_response = requests.post(
+                    f"{NLP_SERVICE_URL}/analyze",
+                    json=nlp_data,
+                    timeout=60
+                )
+                
+                print(f"🧠 [DEBUG] NLP Service ответил: {nlp_response.status_code}")
+                
+                if nlp_response.status_code == 200:
+                    nlp_result = nlp_response.json()
+                    
+                    if nlp_result.get('success', False) and 'detections' in nlp_result:
+                        nlp_counter = len(rule_engine_items)
+                        for detection in nlp_result['detections']:
+                            nlp_item = {
+                                'block_id': detection.get('block_id', f'nlp_block_{nlp_counter}'),
+                                'category': detection.get('category', 'NLP Detection'),
+                                'original_value': detection.get('original_value', ''),
+                                'uuid': detection.get('uuid', f"NLP_{nlp_counter}_{detection.get('category', 'unknown')}"),
+                                'position': detection.get('position', {}),
+                                'confidence': detection.get('confidence', 0.8),
+                                'method': detection.get('method', 'nlp_unknown'),  # Добавляем поле method
+                                'spacy_label': detection.get('spacy_label', ''),   # Добавляем spacy_label
+                                'source': 'NLP Service',
+                                'block_text': detection.get('context', detection.get('original_value', ''))
+                            }
+                            nlp_items.append(nlp_item)
+                            nlp_counter += 1
+                        
+                        print(f"🧠 [DEBUG] NLP Service нашел: {len(nlp_result['detections'])} элементов")
+                    else:
+                        print(f"🧠 [DEBUG] NLP Service не нашел чувствительных данных или вернул success=false")
+                else:
+                    print(f"🧠 [DEBUG] NLP Service error: {nlp_response.status_code} - {nlp_response.text}")
+            else:
+                print(f"🧠 [DEBUG] Нет текстовых блоков для NLP анализа")
+                
+        except Exception as e:
+            print(f"🧠 [DEBUG] Ошибка NLP анализа: {str(e)}")
+        
+        # Объединяем результаты
+        all_found_items = rule_engine_items + nlp_items
         
         return JSONResponse(content={
             "status": "success",
-            "found_items": found_items,
-            "total_items": len(found_items),
+            "found_items": all_found_items,
+            "total_items": len(all_found_items),
+            "rule_engine_items": len(rule_engine_items),
+            "nlp_items": len(nlp_items),
             "blocks_processed": len(blocks),
             "filename": file.filename
         })

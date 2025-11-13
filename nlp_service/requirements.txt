@@ -2,3 +2,7 @@ fastapi
 uvicorn
 pydantic
 spacy
+pandas
+openpyxl
+pymorphy3
+typing-extensions

@@ -35,7 +35,7 @@ UNIFIED_SERVICE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '
 sys.path.append(os.path.join(UNIFIED_SERVICE_PATH, 'app'))
 
 # Настройка API (если используем через HTTP)
-API_BASE_URL = "http://localhost:8000"  # Gateway
+API_BASE_URL = "http://localhost:8002"  # Gateway
 USE_DIRECT_IMPORT = False  # True = прямой импорт, False = через HTTP API
 
 # Прямой импорт модулей отключен, используем только HTTP API режим
@@ -165,9 +165,9 @@ def step2_review_findings():
     # Подготавливаем данные для таблицы
     table_data = []
     for i, item in enumerate(found_data):
-        # Определяем источник данных: unified_document_service = "Да", nlp_service = "Нет"
-        # Пока все данные идут от unified_document_service, поэтому "Да"
-        is_structured = item.get('source', 'unified_document_service') == 'unified_document_service'
+        # Определяем источник данных
+        source = item.get('source', 'Rule Engine')
+        is_structured = source == 'Rule Engine'
         
         # Формируем контекст с выделением найденного значения
         block_text = item.get('block_text', item.get('context', 'Контекст недоступен'))
@@ -179,14 +179,37 @@ def step2_review_findings():
         else:
             highlighted_context = block_text
         
+        # Определяем метод обнаружения
+        method = item.get('method', 'regex' if is_structured else 'nlp_unknown')
+        spacy_label = item.get('spacy_label', '')
+        
+        method_display = {
+            'regex': 'Regex паттерн',
+            'spacy_ner_per': f'spaCy NER (PER){f" - {spacy_label}" if spacy_label else ""}',
+            'spacy_ner_person': f'spaCy NER (PERSON){f" - {spacy_label}" if spacy_label else ""}', 
+            'spacy_ner_org': f'spaCy NER (ORG){f" - {spacy_label}" if spacy_label else ""}',
+            'spacy_ner_loc': f'spaCy NER (LOC){f" - {spacy_label}" if spacy_label else ""}',
+            'spacy_ner_gpe': f'spaCy NER (GPE){f" - {spacy_label}" if spacy_label else ""}',
+            'spacy_ner': 'spaCy NER',
+            'morphological_enhanced': 'Морфология (улучш.)',
+            'morphological': 'Морфология (контекст)',
+            'context': 'Контекстный анализ',
+            'custom': 'Кастомный паттерн',
+            'spacy_context': 'spaCy + контекст',
+            'unknown': 'Неизвестно',
+            'nlp_unknown': 'Неизвестно'
+        }.get(method, method)
+        
         table_data.append({
             'ID': i + 1,
+            'Источник': source,
+            'Метод': method_display,
             'Тип': item.get('type', 'Неизвестно'),
             'Значение': item.get('original_value', ''),
             'Связанный контекст': highlighted_context,
             'UUID замена': item.get('uuid', ''),
             'Структурированные данные': 'Да' if is_structured else 'Нет',
-            'Уверенность': item.get('confidence', 1.0),
+            'Уверенность': f"{item.get('confidence', 1.0):.2f}",
             'Комментарий': item.get('comment', ''),
             'Заменить': item.get('approved', True)
         })
@@ -197,6 +220,12 @@ def step2_review_findings():
             pd.DataFrame(table_data),
             column_config={
                 'ID': st.column_config.NumberColumn('№', disabled=True),
+                'Источник': st.column_config.TextColumn('Источник', disabled=True),
+                'Метод': st.column_config.TextColumn(
+                    'Метод обнаружения', 
+                    disabled=True,
+                    help="Какой алгоритм определил эту сущность"
+                ),
                 'Тип': st.column_config.TextColumn('Тип', disabled=True),
                 'Значение': st.column_config.TextColumn('Значение', disabled=True),
                 'Связанный контекст': st.column_config.TextColumn(
@@ -208,11 +237,10 @@ def step2_review_findings():
                 'Структурированные данные': st.column_config.TextColumn(
                     'Структурированные данные', 
                     disabled=True,
-                    help="Да = unified_document_service, Нет = nlp_service"
+                    help="Да = Rule Engine, Нет = NLP Service"
                 ),
-                'Уверенность': st.column_config.NumberColumn(
+                'Уверенность': st.column_config.TextColumn(
                     'Уверенность', 
-                    format="%.0%%", 
                     disabled=True,
                     help="Уверенность системы в правильности распознавания"
                 ),
@@ -482,7 +510,7 @@ def analyze_document_api(uploaded_file, patterns_file):
             
             progress_bar.progress(90)
             
-            # Преобразуем результат в формат для фронтенда
+            # Получаем объединенные результаты от Rule Engine + NLP Service
             found_data = []
             
             if 'found_items' in result and result['found_items']:
@@ -495,14 +523,24 @@ def analyze_document_api(uploaded_file, patterns_file):
                         'uuid': item.get('uuid', item.get('replacement', '')),
                         'position': item.get('position', {}),
                         'confidence': item.get('confidence', 1.0),
+                        'method': item.get('method', 'unknown'),  # ⬅️ Добавляем поле method!
+                        'spacy_label': item.get('spacy_label', ''),  # ⬅️ Добавляем spacy_label!
                         'approved': True,  # По умолчанию одобрено
-                        'comment': '',
-                        'source': 'unified_document_service',  # Помечаем источник
-                        'block_text': item.get('block_text', item.get('context', 'Контекст недоступен'))  # Текст блока
+                        'comment': item.get('comment', ''),
+                        'source': item.get('source', 'Unknown'),  # Источник уже указан в данных
+                        'block_text': item.get('block_text', item.get('context', 'Контекст недоступен'))
                     }
                     found_data.append(found_item)
-                
-                st.info(f"📈 Найдено {len(found_data)} чувствительных элементов")
+            
+            # Выводим сводку
+            rule_engine_count = result.get('rule_engine_items', 0)
+            nlp_count = result.get('nlp_items', 0)
+            total_count = result.get('total_items', len(found_data))
+            
+            if found_data:
+                st.success(f"📈 Общий итог: найдено {total_count} чувствительных элементов")
+                st.info(f"   • Rule Engine: {rule_engine_count} элементов")
+                st.info(f"   • NLP Service: {nlp_count} элементов")
             else:
                 st.info("ℹ️ Чувствительные данные не найдены")
             
