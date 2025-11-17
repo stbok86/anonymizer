@@ -1,5 +1,51 @@
 # CHANGELOG
 
+## [v1.4] - 2025-11-17
+
+### 🎯 Major Architecture Improvements & Critical Bug Fixes
+
+#### ✅ Critical Bug Fixes
+- **Fixed NLP detections not showing in UI** - Removed aggressive deduplication logic that was incorrectly removing all NLP results as "duplicates"
+- **Fixed anonymization function errors** - Resolved 'category' field KeyError by adding proper error handling with `item.get('category', 'unknown')`
+- **Fixed duplicate NLP service calls** - Removed duplicate NLP calls from Rule Engine to eliminate redundant processing
+- **Fixed Form parameter handling** - Corrected `/anonymize_selected` endpoint to properly receive `selected_items` using `Form()` parameter
+
+#### 🔧 Architecture Enhancements
+- **Clear service separation** - Rule Engine now handles only structured data (regex patterns), NLP Service handles unstructured data (entities, names, organizations)
+- **Enhanced request logging** - Added comprehensive logging middleware to Gateway and Unified Document Service for better debugging
+- **Improved error handling** - Better exception handling across all services with user-friendly error messages
+- **Modular detection strategies** - Implemented detection factory pattern in NLP Service for extensible detection methods
+
+#### 🎨 UI/UX Improvements
+- **Added Block ID column** - New column in sensitive data table showing exact document block (`table_0`, `paragraph_74`, etc.) where data was found
+- **Better source attribution** - Clear indication of whether data was found by Rule Engine vs NLP Service
+- **Improved table configuration** - Proper column widths, tooltips, and user guidance
+- **Enhanced visual feedback** - Better error messages and status indicators
+
+#### 🛠️ Technical Improvements
+- **Better JSON serialization** - Improved data handling for anonymization requests with proper defaults
+- **Enhanced pattern loading** - More robust pattern file loading with fallback paths
+- **Improved configuration management** - Better separation of concerns and configuration handling
+- **Code quality improvements** - Better modular design and maintainability
+
+#### 📋 System Reliability
+- **Comprehensive logging** - Request/response logging across all services for debugging
+- **Better service communication** - More reliable HTTP API communication between microservices
+- **Improved data validation** - Better handling of missing or malformed data
+- **Enhanced error recovery** - Graceful handling of service failures
+
+### 🔄 Migration Notes
+- No breaking changes for existing users
+- Services automatically restart to pick up new configurations
+- All existing data and patterns remain compatible
+
+### 📊 System Performance
+- Reduced duplicate processing by eliminating redundant NLP calls
+- Improved memory usage through better data handling
+- Faster error detection and resolution through enhanced logging
+
+---
+
 ## [1.3.0] - 2025-11-13
 
 ### 🚀 Major Features
