@@ -1,0 +1,249 @@
+{
+  "nlp_service_config": {
+    "models": {
+      "spacy": {
+        "preferred_models": [
+          "ru_core_news_lg",
+          "ru_core_news_md", 
+          "ru_core_news_sm"
+        ],
+        "fallback_error_message": "Не найдена русская spaCy модель. Установите: python -m spacy download ru_core_news_sm"
+      },
+      "morphology": {
+        "enabled": true,
+        "analyzer": "pymorphy3"
+      }
+    },
+    
+    "confidence_thresholds": {
+      "global_filter": 0.6,
+      "spacy_ner": 0.8,
+      "morphological_enhanced": 0.7,
+      "morphological_fallback": 0.6,
+      "custom_matcher_full_names": 0.9,
+      "custom_matcher_initials": 0.85,
+      "custom_matcher_simple": 0.5,
+      "default_pattern_confidence": 0.7
+    },
+    
+    "regex_settings": {
+      "person_name_flags": ["UNICODE"],
+      "other_categories_flags": ["IGNORECASE", "UNICODE"],
+      "case_sensitive_categories": ["person_name"]
+    },
+    
+    "processing_settings": {
+      "context_window_size": 50,
+      "phrase_matcher_attr": "LOWER",
+      "enable_deduplication": true
+    },
+    
+    "file_paths": {
+      "patterns_file": "patterns/nlp_patterns.xlsx",
+      "patterns_file_relative_to": "nlp_service_app_dir"
+    },
+    
+    "context_keywords": {
+      "salary": ["зарплата", "оклад", "доход", "заработок", "выплата"],
+      "health_info": ["диагноз", "лечение", "болезнь", "медицин", "больниц"],
+      "contract_info": ["номер", "договор", "контракт", "соглашение"],
+      "financial_amount": ["стоимость", "цена", "сумма", "оплата", "платеж"]
+    },
+    
+    "entity_mapping": {
+      "spacy_to_internal": {
+        "PER": "person_name",
+        "PERSON": "person_name",
+        "ORG": "organization", 
+        "LOC": "location",
+        "GPE": "location"
+      }
+    },
+    
+    "morphological_analysis": {
+      "person_name_tags": ["Name", "Surn", "Patr"],
+      "animated_noun_tags": ["NOUN", "anim"],
+      "required_pos_tag": "PROPN",
+      "min_token_length": 2
+    },
+    
+    "custom_phrase_categories": {
+      "positions": {
+        "enabled": true,
+        "confidence": 0.8
+      },
+      "organizations": {
+        "enabled": true,
+        "confidence": 0.75
+      },
+      "departments": {
+        "enabled": true,
+        "confidence": 0.7
+      },
+      "salaries": {
+        "enabled": true,
+        "confidence": 0.85
+      },
+      "health": {
+        "enabled": true,
+        "confidence": 0.9
+      },
+      "trade_secrets": {
+        "enabled": true,
+        "confidence": 0.8
+      }
+    },
+    
+    "detection_methods": {
+      "person_name": {
+        "enabled_methods": ["spacy_ner", "regex", "morphological", "custom_matcher"],
+        "priority_order": [1, 2, 3, 4],
+        "strategy": "best_confidence",
+        "fallback_enabled": true,
+        "max_results": 5,
+        "method_settings": {
+          "spacy_ner": {
+            "min_confidence": 0.8,
+            "early_exit_threshold": 0.95
+          },
+          "regex": {
+            "min_confidence": 0.6,
+            "early_exit_threshold": 0.9
+          },
+          "morphological": {
+            "min_confidence": 0.7,
+            "enhanced_confidence": 0.85,
+            "fallback_confidence": 0.6
+          },
+          "custom_matcher": {
+            "min_confidence": 0.9
+          }
+        }
+      },
+      "organization": {
+        "enabled_methods": ["spacy_ner", "regex", "phrase_matcher"],
+        "priority_order": [1, 3, 2],
+        "strategy": "combine_all",
+        "fallback_enabled": false,
+        "max_results": 3,
+        "method_settings": {
+          "spacy_ner": {
+            "min_confidence": 0.8,
+            "early_exit_threshold": 0.9
+          },
+          "regex": {
+            "min_confidence": 0.75
+          },
+          "phrase_matcher": {
+            "min_confidence": 0.7
+          }
+        }
+      },
+      "position": {
+        "enabled_methods": ["phrase_matcher", "regex"],
+        "priority_order": [1, 2],
+        "strategy": "first_match",
+        "fallback_enabled": false,
+        "max_results": 2,
+        "method_settings": {
+          "phrase_matcher": {
+            "min_confidence": 0.8
+          },
+          "regex": {
+            "min_confidence": 0.7
+          }
+        }
+      },
+      "address": {
+        "enabled_methods": ["regex", "spacy_ner"],
+        "priority_order": [1, 2],
+        "strategy": "combine_all",
+        "fallback_enabled": true,
+        "max_results": 5,
+        "method_settings": {
+          "regex": {
+            "min_confidence": 0.8
+          },
+          "spacy_ner": {
+            "min_confidence": 0.75
+          }
+        }
+      },
+      "government_org": {
+        "enabled_methods": ["regex", "phrase_matcher", "spacy_ner"],
+        "priority_order": [1, 2, 3],
+        "strategy": "best_confidence",
+        "fallback_enabled": true,
+        "max_results": 3,
+        "method_settings": {
+          "regex": {
+            "min_confidence": 0.85
+          },
+          "phrase_matcher": {
+            "min_confidence": 0.8
+          },
+          "spacy_ner": {
+            "min_confidence": 0.75
+          }
+        }
+      },
+      "financial_amount": {
+        "enabled_methods": ["regex", "context_matcher"],
+        "priority_order": [1, 2],
+        "strategy": "best_confidence",
+        "fallback_enabled": true,
+        "max_results": 10,
+        "method_settings": {
+          "regex": {
+            "min_confidence": 0.85
+          },
+          "context_matcher": {
+            "min_confidence": 0.75
+          }
+        }
+      }
+    },
+    
+    "detection_strategies": {
+      "best_confidence": {
+        "description": "Выбирает результат с наивысшей уверенностью",
+        "combine_overlapping": false,
+        "prefer_longer_matches": true
+      },
+      "combine_all": {
+        "description": "Объединяет результаты всех методов без дубликатов",
+        "combine_overlapping": true,
+        "dedup_threshold": 0.8
+      },
+      "first_match": {
+        "description": "Возвращает первый найденный результат",
+        "stop_on_first": true,
+        "min_confidence_threshold": 0.7
+      },
+      "weighted_average": {
+        "description": "Комбинирует результаты с весовым усреднением",
+        "method_weights": {
+          "spacy_ner": 1.0,
+          "morphological": 0.8,
+          "regex": 0.6,
+          "phrase_matcher": 0.7,
+          "custom_matcher": 0.9
+        }
+      }
+    },
+    
+    "validation_settings": {
+      "require_context_validation": true,
+      "min_word_length": 2,
+      "skip_stop_words": true,
+      "skip_punctuation": true
+    },
+    
+    "logging": {
+      "level": "INFO",
+      "log_model_loading": true,
+      "log_pattern_loading": true,
+      "log_detection_stats": true
+    }
+  }
+}

@@ -60,6 +60,8 @@ def initialize_session_state():
         st.session_state.user_comments = {}
     if 'anonymized_files' not in st.session_state:
         st.session_state.anonymized_files = []
+    if 'anonymization_stats' not in st.session_state:
+        st.session_state.anonymization_stats = {}  # Статистика анонимизации
 
 def step1_upload_document():
     """Шаг 1: Загрузка документа и анализ"""
@@ -205,6 +207,7 @@ def step2_review_findings():
             'Источник': source,
             'Метод': method_display,
             'Тип': item.get('type', 'Неизвестно'),
+            'Блок': item.get('block_id', 'unknown'),
             'Значение': item.get('original_value', ''),
             'Связанный контекст': highlighted_context,
             'UUID замена': item.get('uuid', ''),
@@ -227,6 +230,12 @@ def step2_review_findings():
                     help="Какой алгоритм определил эту сущность"
                 ),
                 'Тип': st.column_config.TextColumn('Тип', disabled=True),
+                'Блок': st.column_config.TextColumn(
+                    'ID блока', 
+                    disabled=True,
+                    width="small",
+                    help="Идентификатор блока документа"
+                ),
                 'Значение': st.column_config.TextColumn('Значение', disabled=True),
                 'Связанный контекст': st.column_config.TextColumn(
                     'Связанный контекст', 
@@ -355,6 +364,33 @@ def step3_download_results():
     
     st.success("✅ Документ успешно анонимизирован!")
     
+    # Отображаем статистику анонимизации
+    if 'anonymization_stats' in st.session_state and st.session_state.anonymization_stats:
+        stats = st.session_state.anonymization_stats
+        
+        # Создаем колонки для счетчиков
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric(
+                label="🔍 Найдено чувствительных данных",
+                value=f"{stats.get('total_found', 0)} элементов"
+            )
+        
+        with col2:
+            st.metric(
+                label="🔒 Анонимизировано чувствительных данных", 
+                value=f"{stats.get('replacements_applied', stats.get('total_anonymized', 0))} элементов"
+            )
+        
+        # Дополнительная информация о замене
+        if stats.get('replacement_stats', {}):
+            replacement_stats = stats['replacement_stats']
+            if replacement_stats.get('total_replacements', 0) > 0:
+                st.info(f"✅ Выполнено замен: {replacement_stats.get('total_replacements', 0)}")
+        
+        st.markdown("---")
+    
     # Проверяем, есть ли готовые файлы
     if st.session_state.anonymized_files:
         st.markdown("### 📁 Файлы готовы для скачивания:")
@@ -408,6 +444,7 @@ def step3_download_results():
         st.session_state.found_data = []
         st.session_state.user_comments = {}
         st.session_state.anonymized_files = []
+        st.session_state.anonymization_stats = {}  # Сбрасываем статистику
         st.rerun()
 
 def generate_replacements_table(approved_items, original_filename):
@@ -580,13 +617,19 @@ def anonymize_document_full_api(uploaded_file, approved_items, patterns_file):
         
         data = {
             'patterns_file': patterns_file,
-            'generate_excel_report': True,
-            'generate_json_ledger': False  # Не генерируем JSON, так как он неактуален для пользователей
+            'selected_items': json.dumps([{
+                'block_id': item.get('block_id', ''),
+                'original_value': item.get('original_value', ''),
+                'uuid': item.get('uuid', ''),
+                'position': item.get('position', {}),
+                'category': item.get('category', 'unknown'),
+                'confidence': item.get('confidence', 1.0)
+            } for item in approved_items])  # Передаем только выбранные элементы
         }
         
-        # Отправляем запрос на полную анонимизацию
+        # Отправляем запрос на селективную анонимизацию
         response = requests.post(
-            f"{API_BASE_URL}/anonymize_full", 
+            f"{API_BASE_URL}/anonymize_selected",  # Используем селективный endpoint 
             files=files,
             data=data,
             timeout=120
@@ -595,34 +638,30 @@ def anonymize_document_full_api(uploaded_file, approved_items, patterns_file):
         if response.status_code == 200:
             result = response.json()
             
+            # Сохраняем статистику анонимизации в session_state
+            st.session_state.anonymization_stats = {
+                'total_found': len(approved_items),  # Количество найденных элементов (выбранных пользователем)
+                'total_anonymized': len(approved_items),  # Количество отправленных на анонимизацию
+                'replacement_stats': result.get('statistics', {}),  # Детальная статистика замен
+                'replacements_applied': result.get('replacements_applied', 0)  # Фактически выполненные замены
+            }
+            
             # Формируем список файлов для скачивания
             download_files = []
             
-            files_base64 = result.get('files_base64', {})
-            
-            # Анонимизированный документ
-            if files_base64.get('anonymized_document_base64'):
-                import base64
-                doc_data = base64.b64decode(files_base64['anonymized_document_base64'])
+            # Анонимизированный документ (возвращается напрямую в base64)
+            if result.get('anonymized_document_base64'):
+                doc_data = base64.b64decode(result['anonymized_document_base64'])
                 download_files.append({
                     'type': 'document',
                     'label': '📄 Скачать анонимизированный документ',
                     'data': doc_data,
-                    'filename': f"{uploaded_file.name.rsplit('.', 1)[0]}_anonymized.docx",
+                    'filename': result.get('filename', f"{uploaded_file.name.rsplit('.', 1)[0]}_anonymized.docx"),
                     'mime': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 })
             
-            # Excel отчет
-            if files_base64.get('excel_report_base64'):
-                import base64
-                excel_data = base64.b64decode(files_base64['excel_report_base64'])
-                download_files.append({
-                    'type': 'excel',
-                    'label': '📊 Скачать Excel отчет с заменами',
-                    'data': excel_data,
-                    'filename': f"{uploaded_file.name.rsplit('.', 1)[0]}_report.xlsx",
-                    'mime': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                })
+            # Примечание: /anonymize_selected не генерирует Excel отчет
+            # Excel отчет создается только через generate_replacements_table
             
             return download_files
             

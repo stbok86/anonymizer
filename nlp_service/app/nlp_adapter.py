@@ -14,27 +14,46 @@ from spacy.matcher import Matcher, PhraseMatcher
 from spacy.tokens import Doc, Token
 import pymorphy3
 
+try:
+    from nlp_config import NLPConfig
+    from detection_strategies import DetectionStrategyFactory
+    from detection_factory import DetectionMethodFactory
+except ImportError:
+    import sys
+    import os
+    sys.path.append(os.path.dirname(__file__))
+    from nlp_config import NLPConfig
+    from detection_strategies import DetectionStrategyFactory
+    from detection_factory import DetectionMethodFactory
+
 
 class NLPAdapter:
     """
     Адаптер для обработки неструктурированных именованных сущностей
     """
     
-    def __init__(self, patterns_file: Optional[str] = None, confidence_threshold: float = 0.6):
+    def __init__(self, config_path: Optional[str] = None, patterns_file: Optional[str] = None, confidence_threshold: Optional[float] = None):
         """
         Инициализация NLP адаптера
         
         Args:
-            patterns_file: Путь к файлу с паттернами. Если None, использует дефолтный
-            confidence_threshold: Минимальный уровень уверенности для обнаружений
+            config_path: Путь к файлу конфигурации. Если None, использует дефолтный
+            patterns_file: Путь к файлу с паттернами. Если None, использует из конфига
+            confidence_threshold: Минимальный уровень уверенности. Если None, использует из конфига
         """
+        # Загружаем конфигурацию
+        self.config = NLPConfig(config_path)
+        
+        # Инициализируем переменные
         self.nlp = None
         self.matcher = None
         self.phrase_matcher = None
         self.morph = None  # pymorphy3 анализатор
         self.patterns = {}
         self.pattern_configs = {}
-        self.confidence_threshold = confidence_threshold
+        
+        # Устанавливаем порог уверенности
+        self.confidence_threshold = confidence_threshold or self.config.get_global_confidence_threshold()
         
         # Специальные термины для PhraseMatcher
         self.custom_phrases = {}
@@ -43,45 +62,42 @@ class NLPAdapter:
         self._load_spacy_model()
         
         # Инициализируем морфологический анализатор
-        self._init_morphology()
+        if self.config.is_morphology_enabled():
+            self._init_morphology()
         
         # Загружаем паттерны
-        if patterns_file is None:
-            patterns_file = os.path.join(
-                os.path.dirname(__file__), "..", "patterns", "nlp_patterns.xlsx"
-            )
-        self._load_patterns(patterns_file)
+        patterns_file_path = patterns_file or self.config.get_patterns_file_path()
+        self._load_patterns(patterns_file_path)
         
         # Настраиваем матчеры
         self._setup_matchers()
+        
+        # Инициализируем централизованную систему детекции
+        self.detection_factory = DetectionMethodFactory(self.config)
     
     def _load_spacy_model(self):
-        """Загружает русскую spaCy модель"""
-        try:
-            # Пытаемся загрузить большую модель
-            self.nlp = spacy.load("ru_core_news_lg")
-            print("✅ Загружена русская spaCy модель: ru_core_news_lg")
-        except OSError:
+        """Загружает русскую spaCy модель согласно конфигурации"""
+        preferred_models = self.config.get_spacy_models()
+        fallback_error = self.config.get_spacy_fallback_error()
+        
+        for model_name in preferred_models:
             try:
-                # Если большой нет, загружаем среднюю
-                self.nlp = spacy.load("ru_core_news_md")
-                print("✅ Загружена русская spaCy модель: ru_core_news_md")
+                self.nlp = spacy.load(model_name)
+                if self.config.should_log_model_loading():
+                    print(f"✅ Загружена русская spaCy модель: {model_name}")
+                return
             except OSError:
-                try:
-                    # Если средней нет, загружаем малую
-                    self.nlp = spacy.load("ru_core_news_sm")
-                    print("✅ Загружена русская spaCy модель: ru_core_news_sm")
-                except OSError:
-                    raise RuntimeError(
-                        "Не найдена русская spaCy модель. "
-                        "Установите: python -m spacy download ru_core_news_sm"
-                    )
+                continue
+        
+        # Если ни одна модель не загрузилась
+        raise RuntimeError(fallback_error)
     
     def _init_morphology(self):
         """Инициализирует морфологический анализатор pymorphy3"""
         try:
             self.morph = pymorphy3.MorphAnalyzer()
-            print("✅ Морфологический анализатор pymorphy3 загружен")
+            if self.config.should_log_model_loading():
+                print("✅ Морфологический анализатор pymorphy3 загружен")
         except Exception as e:
             print(f"⚠️ Не удалось загрузить pymorphy3: {e}")
             self.morph = None
@@ -103,9 +119,13 @@ class NLPAdapter:
                 category = row['category']
                 pattern = row['pattern']
                 pattern_type = row['pattern_type']
-                confidence = float(row.get('confidence', 0.7))
+                confidence = float(row.get('confidence', self.config.get_default_pattern_confidence()))
                 context_required = bool(row.get('context_required', True))
                 description = row.get('description', '')
+                
+                # Пропускаем записи с пустым паттерном (NaN)
+                if pd.isna(pattern) and pattern_type == 'regex':
+                    continue
                 
                 # Группируем по категориям
                 if category not in self.patterns:
@@ -121,7 +141,8 @@ class NLPAdapter:
                     'description': description
                 })
             
-            print(f"✅ Загружено {len(df)} NLP паттернов из {patterns_file}")
+            if self.config.should_log_pattern_loading():
+                print(f"✅ Загружено {len(df)} NLP паттернов из {patterns_file}")
             
         except Exception as e:
             print(f"❌ Ошибка загрузки паттернов: {e}")
@@ -130,7 +151,7 @@ class NLPAdapter:
     def _setup_matchers(self):
         """Настраивает spaCy Matcher и PhraseMatcher с кастомными правилами"""
         self.matcher = Matcher(self.nlp.vocab)
-        self.phrase_matcher = PhraseMatcher(self.nlp.vocab, attr="LOWER")
+        self.phrase_matcher = PhraseMatcher(self.nlp.vocab, attr=self.config.get_phrase_matcher_attr())
         
         # Добавляем паттерны в матчеры
         for category, patterns in self.patterns.items():
@@ -295,7 +316,7 @@ class NLPAdapter:
     
     def find_sensitive_data(self, text: str) -> List[Dict[str, Any]]:
         """
-        Находит чувствительные данные в тексте
+        Находит чувствительные данные в тексте используя централизованную логику
         
         Args:
             text: Текст для анализа
@@ -304,53 +325,245 @@ class NLPAdapter:
             Список найденных чувствительных данных
         """
         if not text or not isinstance(text, str):
+            print(f"🚫 Пустой или некорректный текст: {repr(text)}")
             return []
-        
-        # Обрабатываем текст через spaCy
+
+        print(f"🔍 Анализируем текст длиной {len(text)} символов: '{text[:50]}...'")
+
+        # Обрабатываем текст через spaCy один раз для всех методов
         doc = self.nlp(text)
+        print(f"📝 spaCy обработал {len(doc)} токенов")
         
-        detections = []
+        # Получаем все доступные категории из конфигурации
+        available_categories = self.config.get_available_categories()
+        print(f"🎯 Доступные категории: {available_categories}")
         
-        # 1. spaCy NER
-        detections.extend(self._extract_spacy_entities(doc))
+        all_detections = []
         
-        # 2. Regex паттерны
-        detections.extend(self._extract_regex_patterns(text))
+        # Обрабатываем каждую категорию отдельно с её настройками
+        for category in available_categories:
+            print(f"🔎 Проверяем категорию: {category}")
+            category_detections = self._detect_for_category(category, text, doc)
+            if category_detections:
+                print(f"✅ Категория {category}: найдено {len(category_detections)} элементов")
+            else:
+                print(f"❌ Категория {category}: ничего не найдено")
+            all_detections.extend(category_detections)
         
-        # 3. Контекстные матчеры
-        detections.extend(self._extract_context_matches(doc))
+        print(f"📊 Всего обнаружений до дедупликации: {len(all_detections)}")
         
-        # 4. Морфологический анализ для имен
-        detections.extend(self._extract_morphological_names(doc))
+        # Финальная дедупликация между категориями
+        final_detections = self._global_deduplicate(all_detections)
+        print(f"📊 Обнаружений после дедупликации: {len(final_detections)}")
         
-        # 5. Кастомные матчеры
-        detections.extend(self._extract_custom_matches(doc))
-        
-        # Удаляем дубликаты и фильтруем по confidence
-        unique_detections = self._deduplicate_detections(detections)
-        
-        # Фильтруем по минимальному уровню уверенности
+        # Фильтруем по глобальному confidence threshold
         filtered_detections = [
-            d for d in unique_detections 
-            if d['confidence'] >= self.confidence_threshold
+            detection for detection in final_detections
+            if detection.get('confidence', 0) >= self.confidence_threshold
         ]
+        print(f"📊 Обнаружений после фильтрации (threshold {self.confidence_threshold}): {len(filtered_detections)}")
         
         return filtered_detections
+    
+    def _detect_for_category(self, category: str, text: str, doc: Doc) -> List[Dict[str, Any]]:
+        """
+        Выполняет детекцию для конкретной категории используя её настройки
+        
+        Args:
+            category: Категория для поиска
+            text: Исходный текст
+            doc: Обработанный spaCy документ
+            
+        Returns:
+            Список детекций для категории
+        """
+        # Получаем настройки для категории
+        enabled_methods = self.config.get_enabled_methods_for_category(category)
+        strategy_name = self.config.get_detection_strategy_name(category)
+        max_results = self.config.get_max_results_for_category(category)
+        
+        if not enabled_methods:
+            return []
+        
+        # Собираем результаты по методам с учетом приоритетов
+        results_by_method = {}
+        priority_order = self.config.get_method_priority_order(category)
+        
+        # Создаем список методов с их приоритетами
+        methods_with_priority = list(zip(enabled_methods, priority_order)) if priority_order else [(m, 1) for m in enabled_methods]
+        methods_with_priority.sort(key=lambda x: x[1])  # Сортируем по приоритету
+        
+        for method, priority in methods_with_priority:
+            method_results = self._execute_detection_method(method, category, text, doc)
+            
+            if method_results:
+                results_by_method[method] = method_results
+                
+                # Проверяем early exit
+                if self._should_early_exit(category, method, method_results):
+                    if self.config.should_log_detection_stats():
+                        print(f"Early exit for '{category}' after method '{method}' with {len(method_results)} results")
+                    break
+        
+        # Применяем стратегию комбинирования
+        strategy_settings = self.config.get_detection_strategy_settings(strategy_name)
+        strategy = DetectionStrategyFactory.create_strategy(strategy_name, strategy_settings)
+        
+        combined_results = strategy.combine_results(results_by_method)
+        
+        # Ограничиваем количество результатов
+        if len(combined_results) > max_results:
+            # Сортируем по confidence и берем лучшие
+            combined_results.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+            combined_results = combined_results[:max_results]
+        
+        return combined_results
+    
+    def _execute_detection_method(self, method: str, category: str, text: str, doc: Doc) -> List[Dict[str, Any]]:
+        """
+        Выполняет конкретный метод обнаружения для категории
+        
+        Args:
+            method: Название метода
+            category: Категория для поиска
+            text: Исходный текст  
+            doc: Обработанный spaCy документ
+            
+        Returns:
+            Результаты метода
+        """
+        method_settings = self.config.get_method_settings(category, method)
+        min_confidence = self.config.get_min_confidence_for_method(category, method)
+        
+        results = []
+        
+        try:
+            if method == 'spacy_ner':
+                results = self._extract_spacy_entities_for_category(doc, category)
+            elif method == 'regex':
+                results = self._extract_regex_patterns_for_category(text, category)
+            elif method == 'morphological':
+                results = self._extract_morphological_names_for_category(doc, category)
+            elif method == 'custom_matcher':
+                results = self._extract_custom_matches_for_category(doc, category)
+            elif method == 'phrase_matcher':
+                results = self._extract_context_matches_for_category(doc, category)
+            elif method == 'context_matcher':
+                results = self._extract_context_matches_for_category(doc, category)
+            else:
+                if self.config.should_log_detection_stats():
+                    print(f"Unknown detection method: {method}")
+                return []
+            
+            # Фильтруем по минимальной confidence для метода
+            filtered_results = [r for r in results if r.get('confidence', 0) >= min_confidence]
+            
+            return filtered_results
+            
+        except Exception as e:
+            if self.config.should_log_detection_stats():
+                print(f"Error in method {method} for category {category}: {str(e)}")
+            return []
+    
+    def _should_early_exit(self, category: str, method: str, results: List[Dict[str, Any]]) -> bool:
+        """
+        Определяет, нужно ли делать early exit после данного метода
+        
+        Args:
+            category: Категория
+            method: Метод
+            results: Результаты метода
+            
+        Returns:
+            True если нужен early exit
+        """
+        if not results:
+            return False
+        
+        early_exit_threshold = self.config.get_early_exit_threshold(category, method)
+        
+        # Проверяем, есть ли результаты с высокой confidence
+        for result in results:
+            if result.get('confidence', 0) >= early_exit_threshold:
+                return True
+        
+        return False
+    
+    def _global_deduplicate(self, all_detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Глобальная дедупликация между всеми категориями
+        
+        Args:
+            all_detections: Все найденные детекции
+            
+        Returns:
+            Дедуплицированный список
+        """
+        if not all_detections:
+            return []
+        
+        # Группируем по перекрывающимся позициям
+        deduplicated = []
+        used_indices = set()
+        
+        for i, detection in enumerate(all_detections):
+            if i in used_indices:
+                continue
+            
+            # Ищем перекрывающиеся детекции
+            overlapping_group = [detection]
+            used_indices.add(i)
+            
+            for j, other_detection in enumerate(all_detections[i+1:], i+1):
+                if j in used_indices:
+                    continue
+                
+                if self._detections_overlap(detection, other_detection):
+                    overlapping_group.append(other_detection)
+                    used_indices.add(j)
+            
+            # Выбираем лучшую детекцию из группы
+            best_detection = max(overlapping_group, key=lambda x: x.get('confidence', 0))
+            deduplicated.append(best_detection)
+        
+        return deduplicated
+    
+    def _detections_overlap(self, det1: Dict[str, Any], det2: Dict[str, Any], threshold: float = 0.5) -> bool:
+        """
+        Проверяет, перекрываются ли две детекции
+        
+        Args:
+            det1, det2: Детекции для сравнения
+            threshold: Порог перекрытия
+            
+        Returns:
+            True если перекрываются
+        """
+        pos1 = det1.get('position', {})
+        pos2 = det2.get('position', {})
+        
+        start1, end1 = pos1.get('start', 0), pos1.get('end', 0)
+        start2, end2 = pos2.get('start', 0), pos2.get('end', 0)
+        
+        overlap_start = max(start1, start2)
+        overlap_end = min(end1, end2)
+        
+        if overlap_start >= overlap_end:
+            return False
+        
+        overlap_length = overlap_end - overlap_start
+        min_length = min(end1 - start1, end2 - start2)
+        
+        return (overlap_length / min_length) >= threshold if min_length > 0 else False
     
     def _extract_spacy_entities(self, doc: Doc) -> List[Dict[str, Any]]:
         """Извлекает именованные сущности через spaCy NER"""
         entities = []
         
+        # Маппинг spaCy меток на наши категории из конфига
+        category_map = self.config.get_spacy_entity_mapping()
+        
         for ent in doc.ents:
-            # Маппинг spaCy меток на наши категории
-            category_map = {
-                'PER': 'person_name',
-                'PERSON': 'person_name', 
-                'ORG': 'organization',
-                'LOC': 'location',
-                'GPE': 'location'  # Geopolitical entity
-            }
-            
             if ent.label_ in category_map:
                 category = category_map[ent.label_]
                 
@@ -360,7 +573,7 @@ class NLPAdapter:
                 detection = {
                     'category': category,
                     'original_value': ent.text,
-                    'confidence': 0.8,  # spaCy NER обычно надежный
+                    'confidence': self.config.get_spacy_ner_confidence(),
                     'position': {
                         'start': ent.start_char,
                         'end': ent.end_char
@@ -372,6 +585,202 @@ class NLPAdapter:
                 entities.append(detection)
         
         return entities
+    
+    def _extract_spacy_entities_for_category(self, doc: Doc, category: str) -> List[Dict[str, Any]]:
+        """Извлекает spaCy NER сущности для конкретной категории"""
+        entities = []
+        
+        # Маппинг spaCy меток на наши категории из конфига
+        category_map = self.config.get_spacy_entity_mapping()
+        
+        # Фильтруем только нужную категорию
+        relevant_labels = [label for label, cat in category_map.items() if cat == category]
+        
+        for ent in doc.ents:
+            if ent.label_ in relevant_labels:
+                detection = self.detection_factory.create_detection(
+                    method=f"spacy_ner_{ent.label_.lower()}",
+                    category=category,
+                    original_value=ent.text,
+                    position=(ent.start_char, ent.end_char),
+                    additional_info={
+                        'spacy_confidence': getattr(ent, 'confidence', None),
+                        'spacy_label': ent.label_
+                    }
+                )
+                entities.append(detection)
+        
+        return entities
+    
+    def _extract_regex_patterns_for_category(self, text: str, category: str) -> List[Dict[str, Any]]:
+        """Извлекает regex паттерны для конкретной категории"""
+        detections = []
+        
+        # Получаем паттерны только для нужной категории
+        if category not in self.pattern_configs:
+            return []
+        
+        category_pattern_configs = self.pattern_configs[category]
+        
+        for pattern_config in category_pattern_configs:
+            pattern = pattern_config['pattern']
+            pattern_type = pattern_config['pattern_type']
+            
+            # Пропускаем non-regex паттерны или пустые паттерны
+            if pattern_type != 'regex' or pd.isna(pattern):
+                continue
+            
+            flags = self.config.get_regex_flags_for_category(category)
+            
+            try:
+                matches = re.finditer(pattern, text, flags)
+                
+                for match in matches:
+                    if self._validate_context(text, match, category):
+                        detection = self.detection_factory.create_detection(
+                            method='regex',
+                            category=category,
+                            original_value=match.group(),
+                            position=(match.start(), match.end()),
+                            additional_info={
+                                'pattern_type': pattern_type,
+                                'pattern_complexity': len(pattern) / 100.0,  # Простая метрика сложности
+                                'has_context': True
+                            }
+                        )
+                        detections.append(detection)
+                        
+            except re.error as e:
+                if self.config.should_log_pattern_loading():
+                    print(f"Regex error in pattern for {category}: {e}")
+        
+        return detections
+    
+    def _extract_morphological_names_for_category(self, doc: Doc, category: str) -> List[Dict[str, Any]]:
+        """Извлекает имена через морфологический анализ для конкретной категории"""
+        if category != 'person_name' or not self.morph:
+            return []
+        
+        detections = []
+        
+        # Ищем потенциальные имена по морфологическим признакам
+        for token in doc:
+            # Пропускаем стоп-слова, пунктуацию и короткие токены
+            if token.is_stop or token.is_punct or len(token.text) < 2:
+                continue
+            
+            # Ищем слова с большой буквы (потенциальные имена)
+            if token.text[0].isupper() and token.pos_ == 'PROPN':
+                if self._is_likely_person_name_morph(token.text):
+                    detection = self.detection_factory.create_detection(
+                        method='morphological_enhanced',
+                        category=category,
+                        original_value=token.text,
+                        position=(token.idx, token.idx + len(token.text)),
+                        additional_info={
+                            'morphological_tags': ['enhanced'],
+                            'pos_tag': token.pos_
+                        }
+                    )
+                    detections.append(detection)
+                elif self._is_likely_person_name(token, doc):
+                    detection = self.detection_factory.create_detection(
+                        method='morphological',
+                        category=category,
+                        original_value=token.text,
+                        position=(token.idx, token.idx + len(token.text)),
+                        additional_info={
+                            'morphological_tags': ['basic'],
+                            'pos_tag': token.pos_
+                        }
+                    )
+                    detections.append(detection)
+        
+        return detections
+    
+    def _extract_custom_matches_for_category(self, doc: Doc, category: str) -> List[Dict[str, Any]]:
+        """Извлекает кастомные матчеры для конкретной категории"""
+        detections = []
+        
+        if not self.matcher:
+            return []
+        
+        # Используем Matcher для сложных паттернов
+        matches = self.matcher(doc)
+        
+        for match_id, start, end in matches:
+            span = doc[start:end]
+            label = self.nlp.vocab.strings[match_id]
+            
+            # Определяем категорию по метке и фильтруем
+            if label == "full_name" or label == "initials_lastname":
+                detected_category = "person_name"
+            elif label == "quoted_organization":
+                detected_category = "organization"
+            else:
+                detected_category = "unknown"
+            
+            if detected_category == category:
+                detection = self.detection_factory.create_detection(
+                    method='custom_matcher',
+                    category=category,
+                    original_value=span.text,
+                    position=(span.start_char, span.end_char),
+                    additional_info={
+                        'matcher_label': label,
+                        'is_structured': True,
+                        'match_accuracy': 0.9  # Высокая точность для структурированных паттернов
+                    }
+                )
+                detections.append(detection)
+        
+        return detections
+    
+    def _extract_context_matches_for_category(self, doc: Doc, category: str) -> List[Dict[str, Any]]:
+        """Извлекает контекстные матчеры для конкретной категории"""
+        detections = []
+        
+        if not self.phrase_matcher:
+            return []
+        
+        # Применяем phrase matcher
+        matches = self.phrase_matcher(doc)
+        
+        for match_id, start, end in matches:
+            span = doc[start:end]
+            label = self.nlp.vocab.strings[match_id]
+            
+            # Определяем категорию на основе конфигурации phrase patterns
+            detected_category = self._get_phrase_category(label)
+            
+            if detected_category == category:
+                detection = self.detection_factory.create_detection(
+                    method='phrase_matcher',
+                    category=category,
+                    original_value=span.text,
+                    position=(span.start_char, span.end_char),
+                    additional_info={
+                        'phrase_label': label,
+                        'match_accuracy': 0.8
+                    }
+                )
+                detections.append(detection)
+        
+        return detections
+    
+    def _get_phrase_category(self, label: str) -> str:
+        """Определяет категорию по метке phrase matcher"""
+        # Маппинг меток на категории
+        label_to_category = {
+            'positions': 'position',
+            'organizations': 'organization', 
+            'departments': 'organization',
+            'salaries': 'financial_amount',
+            'health': 'medical',
+            'trade_secrets': 'confidential'
+        }
+        
+        return label_to_category.get(label, 'unknown')
     
     def _extract_regex_patterns(self, text: str) -> List[Dict[str, Any]]:
         """Извлекает данные через regex паттерны"""
@@ -385,12 +794,9 @@ class NLPAdapter:
                 try:
                     pattern = config['pattern']
                     
-                    # Для категории person_name не используем IGNORECASE, 
-                    # чтобы избежать ложных срабатываний на обычных словах
-                    if category == 'person_name':
-                        matches = re.finditer(pattern, text, re.UNICODE)
-                    else:
-                        matches = re.finditer(pattern, text, re.IGNORECASE | re.UNICODE)
+                    # Получаем флаги regex из конфигурации
+                    regex_flags = self.config.get_regex_flags_for_category(category)
+                    matches = re.finditer(pattern, text, regex_flags)
                     
                     for match in matches:
                         # Проверяем контекст если требуется
@@ -463,7 +869,7 @@ class NLPAdapter:
                     detection = {
                         'category': 'person_name',
                         'original_value': token.text,
-                        'confidence': 0.7,  # Средняя уверенность для морфологического анализа
+                        'confidence': self.config.get_morphological_enhanced_confidence(),
                         'position': {
                             'start': token.idx,
                             'end': token.idx + len(token.text)
@@ -477,7 +883,7 @@ class NLPAdapter:
                     detection = {
                         'category': 'person_name',
                         'original_value': token.text,
-                        'confidence': 0.6,
+                        'confidence': self.config.get_morphological_fallback_confidence(),
                         'position': {
                             'start': token.idx,
                             'end': token.idx + len(token.text)
@@ -498,12 +904,18 @@ class NLPAdapter:
             # Анализируем слово
             parsed = self.morph.parse(word)
             
+            # Получаем теги из конфигурации
+            person_name_tags = self.config.get_morphological_person_name_tags()
+            animated_noun_tags = self.config.get_morphological_animated_noun_tags()
+            
             for parse in parsed:
-                # Проверяем теги
-                if 'Name' in parse.tag or 'Surn' in parse.tag or 'Patr' in parse.tag:
-                    return True
+                # Проверяем теги для имен
+                for tag in person_name_tags:
+                    if tag in parse.tag:
+                        return True
+                
                 # Также проверяем одушевленные существительные
-                if 'NOUN' in parse.tag and 'anim' in parse.tag:
+                if all(tag in parse.tag for tag in animated_noun_tags):
                     return True
             
             return False
@@ -525,13 +937,13 @@ class NLPAdapter:
             # Определяем категорию по метке
             if label == "full_name" or label == "initials_lastname":
                 category = "person_name"
-                confidence = 0.9  # Высокая уверенность для структурированных имен
+                confidence = self.config.get_custom_matcher_confidence('person_name')
             elif label == "quoted_organization":
                 category = "organization"
-                confidence = 0.85
+                confidence = self.config.get_custom_matcher_confidence('organization')
             else:
                 category = "unknown"
-                confidence = 0.5
+                confidence = self.config.get_custom_matcher_confidence('unknown')
             
             detection = {
                 'category': category,
@@ -551,21 +963,16 @@ class NLPAdapter:
     def _validate_context(self, text: str, match: re.Match, category: str) -> bool:
         """Валидирует контекст найденного совпадения"""
         # Получаем контекст вокруг совпадения
-        start = max(0, match.start() - 50)
-        end = min(len(text), match.end() + 50)
+        context_size = self.config.get_context_window_size()
+        start = max(0, match.start() - context_size)
+        end = min(len(text), match.end() + context_size)
         context = text[start:end].lower()
         
-        # Контекстные слова для разных категорий
-        context_keywords = {
-            'salary': ['зарплата', 'оклад', 'доход', 'заработок', 'выплата'],
-            'health_info': ['диагноз', 'лечение', 'болезнь', 'медицин', 'больниц'],
-            'contract_info': ['номер', 'договор', 'контракт', 'соглашение'],
-            'financial_amount': ['стоимость', 'цена', 'сумма', 'оплата', 'платеж']
-        }
+        # Контекстные слова для разных категорий из конфига
+        context_keywords = self.config.get_context_keywords_for_category(category)
         
-        if category in context_keywords:
-            keywords = context_keywords[category]
-            return any(keyword in context for keyword in keywords)
+        if context_keywords:
+            return any(keyword in context for keyword in context_keywords)
         
         return True  # По умолчанию разрешаем
     
@@ -580,8 +987,7 @@ class NLPAdapter:
             return False
         
         # Проверяем наличие контекстных слов рядом
-        context_words = ['господин', 'госпожа', 'товарищ', 'коллега', 
-                        'сотрудник', 'работник', 'специалист']
+        context_words = self.config.get_context_keywords_for_category('person_name')
         
         # Смотрим на соседние токены
         start_idx = max(0, token.i - 2)

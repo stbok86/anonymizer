@@ -45,6 +45,12 @@ class FormatterApplier:
         Returns:
             Статистика применения замен
         """
+        print(f"📝 [FORMATTER_APPLIER] Получено замен для обработки: {len(replacements)}")
+        for i, match in enumerate(replacements[:5]):  # Показываем первые 5
+            print(f"📝 [FORMATTER_APPLIER] Замена {i+1}: '{match.get('original_value', 'N/A')}' → '{match.get('uuid', 'N/A')}'")
+        if len(replacements) > 5:
+            print(f"📝 [FORMATTER_APPLIER] ... и еще {len(replacements) - 5} замен")
+            
         if not replacements:
             return {
                 'total_replacements': 0,
@@ -148,11 +154,18 @@ class FormatterApplier:
             original_value = replacement.get('original_value', '')
             position = replacement.get('position', {})
             
+            print(f"🔧 Пытаемся применить замену:")
+            print(f"   Оригинал: '{original_value}'")
+            print(f"   Element: {type(element) if element else 'None'}")
+            print(f"   Position: {position}")
+            
             if element is None or not original_value:
+                print(f"   ❌ Пропуск: element={element}, original_value='{original_value}'")
                 return False
                 
             # Дополнительная проверка для None значений
             if original_value is None:
+                print(f"   ❌ original_value is None")
                 return False
             
             # Генерируем замещающее значение с использованием существующего UUID
@@ -162,23 +175,33 @@ class FormatterApplier:
                 replacement.get('uuid')
             )
             
+            print(f"   🔄 Замена: '{original_value}' → '{replacement_value}'")
+            
             # Применяем замену в зависимости от типа элемента
             if hasattr(element, 'rows'):
                 # Таблица (проверяем rows, так как у таблиц нет прямого атрибута cells)
-                return self._replace_in_table(element, original_value, replacement_value)
+                result = self._replace_in_table(element, original_value, replacement_value)
+                print(f"   📊 Замена в таблице: {result}")
+                return result
             elif hasattr(element, 'text'):
                 # Параграф
-                return self._replace_in_paragraph(element, original_value, replacement_value, position)
+                result = self._replace_in_paragraph(element, original_value, replacement_value, position)
+                print(f"   📝 Замена в параграфе: {result}")
+                return result
             else:
                 # Общий случай - пытаемся заменить текст
                 current_text = getattr(element, 'text', '')
                 # Дополнительная проверка для None
                 if current_text is None:
                     current_text = ''
+                print(f"   📄 Текущий текст элемента: '{current_text}'")
                 if original_value and original_value in current_text:
                     new_text = current_text.replace(original_value, replacement_value)
                     element.text = new_text
+                    print(f"   ✅ Общая замена: '{current_text}' → '{new_text}'")
                     return True
+                else:
+                    print(f"   ❌ Значение '{original_value}' не найдено в тексте '{current_text}'")
                     
             return False
             

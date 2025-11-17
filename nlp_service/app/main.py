@@ -114,8 +114,19 @@ async def analyze_blocks(request: AnalyzeRequest):
         
         for block in request.blocks:
             try:
+                # Логируем содержимое блока для диагностики
+                logger.info(f"🔍 Анализируем блок {block.block_id}: '{block.content[:100]}...' (длина: {len(block.content)})")
+                
                 # Анализируем содержимое блока
                 block_detections = nlp_adapter.find_sensitive_data(block.content)
+                
+                # Детальное логирование результатов
+                if block_detections:
+                    logger.info(f"✅ Блок {block.block_id}: найдено {len(block_detections)} обнаружений")
+                    for det in block_detections[:3]:  # Первые 3 для экономии места
+                        logger.info(f"   - {det['category']}: '{det['original_value']}' (conf: {det['confidence']})")
+                else:
+                    logger.warning(f"⚠️ Блок {block.block_id}: НЕ НАЙДЕНО обнаружений")
                 
                 # Добавляем block_id к каждому обнаружению
                 for detection in block_detections:
@@ -124,10 +135,8 @@ async def analyze_blocks(request: AnalyzeRequest):
                 
                 blocks_processed += 1
                 
-                logger.debug(f"Блок {block.block_id}: найдено {len(block_detections)} обнаружений")
-                
             except Exception as e:
-                logger.error(f"Ошибка анализа блока {block.block_id}: {e}")
+                logger.error(f"❌ Ошибка анализа блока {block.block_id}: {e}")
                 continue
         
         logger.info(f"✅ Анализ завершен: {len(all_detections)} обнаружений в {blocks_processed} блоках")

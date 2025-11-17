@@ -245,6 +245,67 @@ async def anonymize_full(
             detail=f"Unified Document Service недоступен: {str(e)}"
         )
 
+@app.post("/anonymize_selected")
+async def anonymize_selected(
+    file: UploadFile = File(...), 
+    selected_items: str = Form(...),
+    patterns_file: str = Form(default="patterns/sensitive_patterns.xlsx")
+):
+    """
+    Проксирование запроса селективной анонимизации к unified_document_service
+    """
+    try:
+        print(f"🚀 [GATEWAY] Получен запрос анонимизации: файл={file.filename}")
+        print(f"🚀 [GATEWAY] selected_items длина: {len(selected_items) if selected_items else 'None'}")
+        print(f"🚀 [GATEWAY] patterns_file: {patterns_file}")
+        
+        # Подготавливаем файлы для пересылки
+        files = {
+            'file': (file.filename, file.file, file.content_type)
+        }
+        
+        data = {
+            'patterns_file': patterns_file,
+            'selected_items': selected_items
+        }
+        
+        print(f"🚀 [GATEWAY] Отправляем к unified_document_service...")
+        
+        # Пересылаем запрос к unified_document_service
+        response = requests.post(
+            f"{UNIFIED_SERVICE_URL}/anonymize_selected",
+            files=files,
+            data=data,
+            timeout=120
+        )
+        
+        print(f"🚀 [GATEWAY] Ответ от unified_document_service: {response.status_code}")
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"❌ [GATEWAY] Ошибка от unified_document_service: {response.status_code}")
+            print(f"❌ [GATEWAY] Текст ошибки: {response.text}")
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Ошибка unified_document_service: {response.text}"
+            )
+            
+    except requests.exceptions.RequestException as e:
+        print(f"❌ [GATEWAY] Ошибка сети при обращении к unified_document_service: {str(e)}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unified Document Service недоступен: {str(e)}"
+        )
+    except Exception as e:
+        print(f"❌ [GATEWAY] Неожиданная ошибка при анонимизации: {str(e)}")
+        import traceback
+        print(f"❌ [GATEWAY] Трассировка: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Неожиданная ошибка при анонимизации: {str(e)}"
+        )
+
 
 # === NLP Service Routes ===
 

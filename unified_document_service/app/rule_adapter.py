@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 
 class RuleEngineAdapter:
-    def __init__(self, patterns_file: str = None, nlp_service_url: str = "http://localhost:8003"):
+    def __init__(self, patterns_file: str = None, nlp_service_url: str = "http://localhost:8006"):
         """
         Инициализация адаптера правил поиска
         
@@ -162,18 +162,13 @@ class RuleEngineAdapter:
             
             text_content = block.get('text', block.get('content', ''))
             if text_content:
-                # Поиск с помощью регулярных выражений
+                # Поиск ТОЛЬКО с помощью регулярных выражений
+                # NLP анализ выполняется отдельно в main.py
                 regex_matches = self._find_regex_matches(text_content)
                 
-                # Поиск с помощью NLP сервиса (если доступен)
-                nlp_matches = self._find_nlp_matches(text_content)
-                
-                # Объединяем результаты
-                all_matches = regex_matches + nlp_matches
-                
-                # НЕТ удаления дубликатов - паттерны должны быть написаны правильно!
-                if all_matches:
-                    processed_block['sensitive_patterns'] = all_matches
+                # НЕТ дубликатов - каждый сервис отвечает за свои данные
+                if regex_matches:
+                    processed_block['sensitive_patterns'] = regex_matches
             
             processed_blocks.append(processed_block)
         
@@ -229,9 +224,20 @@ class RuleEngineAdapter:
         """
         try:
             # Пытаемся обратиться к NLP сервису
+            payload = {
+                "blocks": [
+                    {
+                        "content": text,
+                        "block_id": "rule_engine_block",
+                        "block_type": "text"
+                    }
+                ],
+                "options": {}
+            }
+            
             response = requests.post(
-                f"{self.nlp_service_url}/analyze_text",
-                json={"text": text},
+                f"{self.nlp_service_url}/analyze",
+                json=payload,
                 timeout=5
             )
             
@@ -239,14 +245,14 @@ class RuleEngineAdapter:
                 nlp_data = response.json()
                 
                 matches = []
-                for entity in nlp_data.get('entities', []):
+                for entity in nlp_data.get('detections', []):
                     matches.append({
-                        'category': entity.get('label', 'unknown').lower(),
-                        'original_value': entity.get('text', ''),
-                        'uuid': str(uuid.uuid4()),
+                        'category': entity.get('category', 'unknown').lower(),
+                        'original_value': entity.get('original_value', ''),
+                        'uuid': entity.get('uuid', str(uuid.uuid4())),
                         'position': {
-                            'start': entity.get('start', 0),
-                            'end': entity.get('end', 0)
+                            'start': entity.get('position', {}).get('start', 0),
+                            'end': entity.get('position', {}).get('end', 0)
                         },
                         'confidence': entity.get('confidence', 0.5),
                         'source': 'nlp',

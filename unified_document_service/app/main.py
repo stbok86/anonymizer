@@ -1,5 +1,5 @@
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse
 import tempfile
 import shutil
@@ -21,6 +21,16 @@ app = FastAPI()
 
 # URL для NLP Service
 NLP_SERVICE_URL = "http://localhost:8006"
+
+# Middleware для логирования всех запросов
+@app.middleware("http")
+async def log_requests(request, call_next):
+    print(f"🌐 [REQUEST] {request.method} {request.url.path} от {request.client.host}")
+    if request.method == "POST":
+        print(f"🌐 [REQUEST] Content-Type: {request.headers.get('content-type', 'NOT_SET')}")
+    response = await call_next(request)
+    print(f"🌐 [RESPONSE] {response.status_code}")
+    return response
 
 @app.get("/health")
 def health():
@@ -136,6 +146,11 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
                 if nlp_response.status_code == 200:
                     nlp_result = nlp_response.json()
                     
+                    print(f"🧠 [DEBUG] NLP Response структура:")
+                    print(f"  success: {nlp_result.get('success', 'НЕ НАЙДЕН')}")
+                    print(f"  detections: {nlp_result.get('detections', 'НЕ НАЙДЕНО')}")
+                    print(f"  Полный ответ: {nlp_result}")
+                    
                     if nlp_result.get('success', False) and 'detections' in nlp_result:
                         nlp_counter = len(rule_engine_items)
                         for detection in nlp_result['detections']:
@@ -165,8 +180,11 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
         except Exception as e:
             print(f"🧠 [DEBUG] Ошибка NLP анализа: {str(e)}")
         
-        # Объединяем результаты
+        # Объединяем результаты БЕЗ дедупликации - каждый сервис отвечает за свои данные
         all_found_items = rule_engine_items + nlp_items
+        
+        print(f"📊 [ANALYZE] Объединение результатов: Rule Engine={len(rule_engine_items)}, NLP Service={len(nlp_items)}, Итого={len(all_found_items)}")
+        print(f"💡 [INFO] Дедупликация отключена - каждый сервис обрабатывает свои типы данных")
         
         return JSONResponse(content={
             "status": "success",
@@ -174,6 +192,7 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
             "total_items": len(all_found_items),
             "rule_engine_items": len(rule_engine_items),
             "nlp_items": len(nlp_items),
+            "duplicates_removed": 0,  # Дедупликация отключена
             "blocks_processed": len(blocks),
             "filename": file.filename
         })
@@ -366,11 +385,15 @@ async def anonymize_full(file: UploadFile = File(...),
             os.remove(input_path)
 
 @app.post("/anonymize_selected")
-async def anonymize_selected(file: UploadFile = File(...), selected_items: str = None):
+async def anonymize_selected(file: UploadFile = File(...), selected_items: str = Form(None)):
     """
     Селективная анонимизация документа на основе выбранных пользователем элементов
     """
+    print(f"🔧 [ANONYMIZE] Запрос анонимизации файла: {file.filename}")
+    print(f"🔧 [ANONYMIZE] Получено selected_items: {selected_items}")
+    
     if not selected_items:
+        print(f"❌ [ANONYMIZE] Нет selected_items")
         return JSONResponse(
             status_code=400,
             content={"status": "error", "message": "Не указаны элементы для анонимизации"}
@@ -389,8 +412,13 @@ async def anonymize_selected(file: UploadFile = File(...), selected_items: str =
         import json
         selected_items_list = json.loads(selected_items)
         
+        print(f"🔧 [ANONYMIZE] Парсинг JSON успешен: {len(selected_items_list)} элементов")
+        print(f"🔧 [ANONYMIZE] Первые 3 элемента: {selected_items_list[:3] if len(selected_items_list) > 3 else selected_items_list}")
+        
         # Инициализируем полный анонимизатор
         anonymizer = FullAnonymizer()
+        
+        print(f"🔧 [ANONYMIZE] Вызываем anonymize_selected_items...")
         
         # Выполняем селективную анонимизацию
         result = anonymizer.anonymize_selected_items(
@@ -398,6 +426,8 @@ async def anonymize_selected(file: UploadFile = File(...), selected_items: str =
             output_path=output_path,
             selected_items=selected_items_list
         )
+        
+        print(f"🔧 [ANONYMIZE] Результат анонимизации: {result.get('status', 'NO_STATUS')}")
         
         if result['status'] == 'success':
             # Кодируем файл в base64 для прямого скачивания
@@ -415,12 +445,18 @@ async def anonymize_selected(file: UploadFile = File(...), selected_items: str =
                 content=result
             )
             
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        print(f"❌ [ANONYMIZE] Ошибка парсинга JSON: {str(e)}")
+        print(f"❌ [ANONYMIZE] selected_items: {selected_items}")
         return JSONResponse(
             status_code=400,
             content={"status": "error", "message": "Некорректный формат данных selected_items"}
         )
     except Exception as e:
+        print(f"❌ [ANONYMIZE] Ошибка селективной анонимизации: {str(e)}")
+        print(f"❌ [ANONYMIZE] Тип ошибки: {type(e).__name__}")
+        import traceback
+        print(f"❌ [ANONYMIZE] Traceback: {traceback.format_exc()}")
         return JSONResponse(
             status_code=500,
             content={"status": "error", "message": f"Ошибка селективной анонимизации: {str(e)}"}
