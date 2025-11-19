@@ -54,7 +54,7 @@
       "spacy_to_internal": {
         "PER": "person_name",
         "PERSON": "person_name",
-        "ORG": "organization", 
+        "ORG": "government_org", 
         "LOC": "location",
         "GPE": "location"
       }
@@ -170,20 +170,20 @@
         }
       },
       "government_org": {
-        "enabled_methods": ["regex", "phrase_matcher", "spacy_ner"],
+        "enabled_methods": ["phrase_matcher", "spacy_ner", "regex"],
         "priority_order": [1, 2, 3],
-        "strategy": "best_confidence",
+        "strategy": "hybrid_government",
         "fallback_enabled": true,
-        "max_results": 3,
+        "max_results": 5,
         "method_settings": {
-          "regex": {
-            "min_confidence": 0.85
-          },
           "phrase_matcher": {
             "min_confidence": 0.8
           },
           "spacy_ner": {
-            "min_confidence": 0.75
+            "min_confidence": 0.65
+          },
+          "regex": {
+            "min_confidence": 0.8
           }
         }
       },
@@ -229,6 +229,17 @@
           "phrase_matcher": 0.7,
           "custom_matcher": 0.9
         }
+      },
+      "hybrid_government": {
+        "description": "Гибридная стратегия для государственных организаций с трёхэтапным подходом",
+        "phrase_priority": 0.98,
+        "ner_confidence_boost": 0.1,
+        "overlap_threshold": 0.5,
+        "government_keywords": [
+          "министерство", "департамент", "управление", "служба", "комитет",
+          "администрация", "правительство", "дума", "совет", "федеральный",
+          "государственный", "муниципальный", "краевой", "областной", "региональный"
+        ]
       }
     },
     

@@ -18,6 +18,8 @@ try:
     from nlp_config import NLPConfig
     from detection_strategies import DetectionStrategyFactory
     from detection_factory import DetectionMethodFactory
+    from text_normalizer import TextNormalizer
+    from smart_phrase_matcher import SmartPhraseMatcher
 except ImportError:
     import sys
     import os
@@ -25,6 +27,8 @@ except ImportError:
     from nlp_config import NLPConfig
     from detection_strategies import DetectionStrategyFactory
     from detection_factory import DetectionMethodFactory
+    from text_normalizer import TextNormalizer
+    from smart_phrase_matcher import SmartPhraseMatcher
 
 
 class NLPAdapter:
@@ -43,6 +47,12 @@ class NLPAdapter:
         """
         # Загружаем конфигурацию
         self.config = NLPConfig(config_path)
+        
+        # Инициализируем нормализатор текста
+        self.text_normalizer = TextNormalizer()
+        
+        # Словарь умных phrase матчеров для разных категорий
+        self.smart_phrase_matchers = {}
         
         # Инициализируем переменные
         self.nlp = None
@@ -255,6 +265,9 @@ class NLPAdapter:
             "персональные данные", "чувствительная информация"
         ]
         
+        # Государственные организации - загружаем из расширенного словаря
+        government_orgs = self._load_government_organizations()
+        
         # Добавляем фразы в PhraseMatcher
         phrase_categories = {
             'position': positions,
@@ -262,7 +275,8 @@ class NLPAdapter:
             'department': departments,
             'salary': financial_terms,
             'health_info': medical_terms,
-            'trade_secret': confidential_terms
+            'trade_secret': confidential_terms,
+            'government_org': government_orgs  # Новая категория для госорганов
         }
         
         for category, phrases in phrase_categories.items():
@@ -276,6 +290,59 @@ class NLPAdapter:
                 self.custom_phrases[category] = phrases
         
         print(f"✅ Настроено {len(phrase_categories)} категорий кастомных фраз")
+        
+        # Создаем умные phrase матчеры для категорий с большими словарями
+        self._setup_smart_phrase_matchers()
+    
+    def _setup_smart_phrase_matchers(self):
+        """Настраивает умные phrase матчеры для сложных категорий"""
+        try:
+            # Создаем умный матчер для государственных организаций
+            if 'government_org' in self.custom_phrases:
+                gov_org_patterns = {'government_org': self.custom_phrases['government_org']}
+                
+                self.smart_phrase_matchers['government_org'] = SmartPhraseMatcher(
+                    nlp=self.nlp,
+                    patterns_dict=gov_org_patterns,
+                    category='government_org'
+                )
+                
+                print(f"✅ Создан умный матчер для государственных организаций ({len(self.custom_phrases['government_org'])} паттернов)")
+            
+            # Можно добавить умные матчеры для других категорий при необходимости
+            
+        except Exception as e:
+            print(f"⚠️ Ошибка при создании умных матчеров: {e}")
+            # Продолжаем работу без умных матчеров
+    
+    def _load_government_organizations(self) -> List[str]:
+        """Загружает расширенный список государственных организаций"""
+        try:
+            # Пытаемся загрузить из файла government_organizations.py
+            import sys
+            patterns_dir = os.path.join(os.path.dirname(__file__), '..', 'patterns')
+            sys.path.insert(0, patterns_dir)
+            
+            from government_organizations import GOVERNMENT_ORGANIZATIONS
+            
+            if self.config.should_log_pattern_loading():
+                print(f"✅ Загружено {len(GOVERNMENT_ORGANIZATIONS)} государственных организаций")
+            
+            return GOVERNMENT_ORGANIZATIONS
+            
+        except ImportError:
+            # Fallback - базовый список из конфигурации
+            fallback_orgs = [
+                "министерство", "департамент", "управление", "служба", "комитет",
+                "администрация", "правительство", "дума", "совет",
+                "федеральная служба", "государственная дума", 
+                "совет федерации", "правительство российской федерации"
+            ]
+            
+            if self.config.should_log_pattern_loading():
+                print(f"⚠️ Использован fallback список ({len(fallback_orgs)} организаций)")
+            
+            return fallback_orgs
     
     def _setup_custom_matchers(self):
         """Настраивает кастомные правила Matcher для сложных паттернов"""
@@ -330,8 +397,21 @@ class NLPAdapter:
 
         print(f"🔍 Анализируем текст длиной {len(text)} символов: '{text[:50]}...'")
 
+        # Сохраняем оригинальный текст для mapping позиций
+        original_text = text
+        
+        # Нормализуем текст для лучшего сопоставления фраз
+        normalized_text = self.text_normalizer.normalize_text(text)
+        
+        if normalized_text != original_text:
+            print(f"🔧 Текст нормализован: '{normalized_text[:50]}...'")
+            # Используем нормализованный текст для обработки
+            processing_text = normalized_text
+        else:
+            processing_text = original_text
+        
         # Обрабатываем текст через spaCy один раз для всех методов
-        doc = self.nlp(text)
+        doc = self.nlp(processing_text)
         print(f"📝 spaCy обработал {len(doc)} токенов")
         
         # Получаем все доступные категории из конфигурации
@@ -343,7 +423,14 @@ class NLPAdapter:
         # Обрабатываем каждую категорию отдельно с её настройками
         for category in available_categories:
             print(f"🔎 Проверяем категорию: {category}")
-            category_detections = self._detect_for_category(category, text, doc)
+            category_detections = self._detect_for_category(category, processing_text, doc)
+            
+            # Если мы использовали нормализованный текст, корректируем позиции
+            if processing_text != original_text:
+                category_detections = self._map_positions_to_original(
+                    category_detections, original_text, normalized_text
+                )
+            
             if category_detections:
                 print(f"✅ Категория {category}: найдено {len(category_detections)} элементов")
             else:
@@ -477,6 +564,10 @@ class NLPAdapter:
         Returns:
             True если нужен early exit
         """
+        # Отключаем early exit для government_org, чтобы использовать гибридную стратегию
+        if category == 'government_org':
+            return False
+            
         if not results:
             return False
         
@@ -740,8 +831,33 @@ class NLPAdapter:
         """Извлекает контекстные матчеры для конкретной категории"""
         detections = []
         
+        # Сначала пробуем умный матчер, если доступен для этой категории
+        if category in self.smart_phrase_matchers:
+            try:
+                smart_matcher = self.smart_phrase_matchers[category]
+                smart_matches = smart_matcher.find_matches(doc)
+                
+                # Конвертируем умные совпадения в детекции
+                smart_detections = smart_matcher.convert_to_detections(
+                    matches=smart_matches,
+                    category=category,
+                    method='smart_phrase_matcher'
+                )
+                
+                detections.extend(smart_detections)
+                
+                # Если умный матчер нашел совпадения, используем только их
+                if smart_detections:
+                    print(f"🎯 Умный матчер для {category}: найдено {len(smart_detections)} совпадений")
+                    return detections
+                
+            except Exception as e:
+                print(f"⚠️ Ошибка в умном матчере для {category}: {e}")
+                # Продолжаем с обычным матчером
+        
+        # Fallback к обычному phrase matcher
         if not self.phrase_matcher:
-            return []
+            return detections
         
         # Применяем phrase matcher
         matches = self.phrase_matcher(doc)
@@ -772,12 +888,13 @@ class NLPAdapter:
         """Определяет категорию по метке phrase matcher"""
         # Маппинг меток на категории
         label_to_category = {
-            'positions': 'position',
-            'organizations': 'organization', 
-            'departments': 'organization',
-            'salaries': 'financial_amount',
-            'health': 'medical',
-            'trade_secrets': 'confidential'
+            'position_phrases': 'position',
+            'organization_phrases': 'organization', 
+            'department_phrases': 'organization',
+            'salary_phrases': 'financial_amount',
+            'health_info_phrases': 'medical',
+            'trade_secret_phrases': 'confidential',
+            'government_org_phrases': 'government_org'  # Новая категория
         }
         
         return label_to_category.get(label, 'unknown')
@@ -1021,3 +1138,96 @@ class NLPAdapter:
                 seen_positions.add(pos_key)
         
         return unique_detections
+    
+    def _map_positions_to_original(self, detections: List[Dict[str, Any]], 
+                                  original_text: str, normalized_text: str) -> List[Dict[str, Any]]:
+        """
+        Маппит позиции из нормализованного текста обратно к оригинальному
+        
+        Args:
+            detections: Список детекций с позициями в нормализованном тексте
+            original_text: Оригинальный текст
+            normalized_text: Нормализованный текст
+            
+        Returns:
+            Список детекций с позициями в оригинальном тексте
+        """
+        if original_text == normalized_text:
+            return detections
+        
+        mapped_detections = []
+        
+        for detection in detections:
+            try:
+                # Получаем найденный текст из нормализованной версии
+                start_norm = detection['position']['start']
+                end_norm = detection['position']['end']
+                found_text = normalized_text[start_norm:end_norm]
+                
+                # Ищем соответствующую позицию в оригинальном тексте
+                original_start = self._find_text_position_in_original(
+                    found_text, original_text, start_norm, normalized_text
+                )
+                
+                if original_start is not None:
+                    # Создаем новую детекцию с правильными позициями
+                    mapped_detection = detection.copy()
+                    mapped_detection['position'] = {
+                        'start': original_start,
+                        'end': original_start + len(found_text)
+                    }
+                    # Обновляем original_value для соответствия оригинальному тексту
+                    mapped_detection['original_value'] = original_text[
+                        original_start:original_start + len(found_text)
+                    ]
+                    mapped_detections.append(mapped_detection)
+                else:
+                    # Если не можем найти соответствие, пропускаем
+                    print(f"⚠️ Не удалось найти '{found_text}' в оригинальном тексте")
+                    
+            except Exception as e:
+                print(f"❌ Ошибка при маппинге позиции: {e}")
+                # В случае ошибки добавляем оригинальную детекцию
+                mapped_detections.append(detection)
+        
+        return mapped_detections
+    
+    def _find_text_position_in_original(self, found_text: str, original_text: str, 
+                                       approximate_pos: int, normalized_text: str) -> Optional[int]:
+        """
+        Находит позицию текста в оригинальном тексте
+        
+        Args:
+            found_text: Найденный текст
+            original_text: Оригинальный текст
+            approximate_pos: Приблизительная позиция в нормализованном тексте
+            normalized_text: Нормализованный текст
+            
+        Returns:
+            Позиция в оригинальном тексте или None, если не найдено
+        """
+        # Простая стратегия: ищем точное совпадение
+        position = original_text.find(found_text)
+        if position != -1:
+            return position
+        
+        # Ищем без учета регистра
+        position = original_text.lower().find(found_text.lower())
+        if position != -1:
+            return position
+        
+        # Ищем с учетом возможных переносов строк
+        # Заменяем переносы строк в найденном тексте на пробелы и ищем снова
+        text_with_spaces = found_text.replace('\n', ' ').replace('\r', ' ')
+        text_variants = [text_with_spaces, text_with_spaces.strip()]
+        
+        for variant in text_variants:
+            position = original_text.find(variant)
+            if position != -1:
+                return position
+            
+            position = original_text.lower().find(variant.lower())
+            if position != -1:
+                return position
+        
+        return None

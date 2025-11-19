@@ -10,7 +10,7 @@ app = FastAPI(title="Document Anonymizer Gateway", version="1.0.0")
 # URL сервисов
 UNIFIED_SERVICE_URL = "http://localhost:8009"
 NLP_SERVICE_URL = "http://localhost:8006"
-RULE_ENGINE_URL = "http://localhost:8003"
+RULE_ENGINE_URL = "http://localhost:8009"
 ORCHESTRATOR_URL = "http://localhost:8004"
 
 @app.get("/")
@@ -367,6 +367,80 @@ async def nlp_test(text: str):
         return response.json()
     except requests.exceptions.RequestException:
         raise HTTPException(status_code=503, detail="NLP Service unavailable")
+
+
+@app.post("/deanonymize")
+async def deanonymize_document(
+    document: UploadFile = File(..., description="Анонимизированный DOCX документ"),
+    replacement_table: UploadFile = File(..., description="Таблица соответствий UUID ↔ оригинальные данные")
+):
+    """
+    Деанонимизация документа - обратная замена UUID на оригинальные данные
+    
+    Args:
+        document: Анонимизированный DOCX файл
+        replacement_table: Excel или CSV файл с соответствиями
+        
+    Returns:
+        JSON с деанонимизированным документом и статистикой
+    """
+    try:
+        # Проверяем типы файлов
+        if not document.filename.endswith('.docx'):
+            raise HTTPException(status_code=400, detail="Документ должен быть в формате DOCX")
+        
+        if not (replacement_table.filename.endswith('.xlsx') or replacement_table.filename.endswith('.csv')):
+            raise HTTPException(status_code=400, detail="Таблица замен должна быть в формате XLSX или CSV")
+        
+        # Создаем временные файлы
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as doc_temp:
+            content = await document.read()
+            doc_temp.write(content)
+            doc_temp_path = doc_temp.name
+        
+        with tempfile.NamedTemporaryFile(
+            suffix='.xlsx' if replacement_table.filename.endswith('.xlsx') else '.csv',
+            delete=False
+        ) as table_temp:
+            table_content = await replacement_table.read()
+            table_temp.write(table_content)
+            table_temp_path = table_temp.name
+        
+        # Отправляем запрос в Unified Document Service
+        files = {
+            'document': ('document.docx', open(doc_temp_path, 'rb')),
+            'replacement_table': ('table.xlsx', open(table_temp_path, 'rb'))
+        }
+        
+        response = requests.post(
+            f"{UNIFIED_SERVICE_URL}/deanonymize",
+            files=files,
+            timeout=120
+        )
+        
+        # Закрываем файлы
+        for file_tuple in files.values():
+            file_tuple[1].close()
+        
+        # Очищаем временные файлы
+        try:
+            os.unlink(doc_temp_path)
+            os.unlink(table_temp_path)
+        except:
+            pass
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Ошибка Unified Service: {response.text}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Внутренняя ошибка Gateway: {str(e)}")
 
 
 if __name__ == "__main__":

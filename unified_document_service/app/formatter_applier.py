@@ -339,7 +339,7 @@ class FormatterApplier:
                             run.font.highlight_color = self.replacement_color
                             print(f"🔧 [PARAGRAPH] ✅ Жёлтое выделение UUID применено к run {i}")
                         except Exception as e:
-                            print(f"🔧 [PARAGRAPH] ⚠️ Не удалось применить выделение: {e}"))
+                            print(f"🔧 [PARAGRAPH] ⚠️ Не удалось применить выделение: {e}")
                     
                     print(f"🔧 [PARAGRAPH] ✅ Замена в run {i} завершена: '{old_run_text}' → '{run.text}'")
                     print(f"🔧 [PARAGRAPH] 🎯 Замена выполнена, выходим из поиска")

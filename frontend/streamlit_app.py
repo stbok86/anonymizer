@@ -18,6 +18,39 @@ STREAMLIT WEB UI ДЛЯ DOCUMENT ANONYMIZER
 """
 
 import streamlit as st
+
+# CSS для изменения текста кнопки "Browse files" на "Выбрать файл"
+st.markdown("""
+<style>
+div[data-testid="stFileUploader"] > section[data-testid="stFileUploaderDropzone"] > button {
+    /* Скрываем стандартную кнопку */
+}
+
+div[data-testid="stFileUploader"] > section[data-testid="stFileUploaderDropzone"] > button:after {
+    content: "Выбрать файл";
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #ff4b4b;
+    color: white;
+    border: none;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+    font-weight: 400;
+    line-height: 1.6;
+    text-align: center;
+    padding: 0.375rem 0.75rem;
+}
+
+div[data-testid="stFileUploader"] > section[data-testid="stFileUploaderDropzone"] > button span {
+    display: none;
+}
+</style>
+""", unsafe_allow_html=True)
+
 import pandas as pd
 import tempfile
 import os
@@ -62,46 +95,58 @@ def initialize_session_state():
         st.session_state.anonymized_files = []
     if 'anonymization_stats' not in st.session_state:
         st.session_state.anonymization_stats = {}  # Статистика анонимизации
+    
+    # Состояние для деанонимизации
+    if 'deanonymized_doc' not in st.session_state:
+        st.session_state.deanonymized_doc = None
+    if 'replacement_table' not in st.session_state:
+        st.session_state.replacement_table = None
+    if 'deanonymization_ready' not in st.session_state:
+        st.session_state.deanonymization_ready = False
 
 def step1_upload_document():
     """Шаг 1: Загрузка документа и анализ"""
-    st.markdown("## 📂 Шаг 1: Загрузите документ")
+    st.markdown("### Выбор документа для анонимизации")
     
-    # Sidebar с настройками
-    with st.sidebar:
-        st.header("⚙️ Настройки")
-        
-        # Файл паттернов
-        patterns_file = st.text_area(
-            "Файл паттернов", 
-            value=os.path.join(UNIFIED_SERVICE_PATH, "patterns/sensitive_patterns.xlsx"),
-            help="Путь к Excel/CSV файлу с правилами поиска",
-            height=60,
-            key="step1_patterns_file"
-        )
-        
-        # Кнопка для поиска файла паттернов
-        if st.button("🔍 Найти файл паттернов автоматически", key="step1_find_patterns"):
-            possible_paths = [
-                os.path.join(UNIFIED_SERVICE_PATH, "patterns", "sensitive_patterns.xlsx"),
-                os.path.join(UNIFIED_SERVICE_PATH, "patterns", "sensitive_patterns_full.csv"),
-                os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "unified_document_service", "patterns", "sensitive_patterns.xlsx")),
-                os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "unified_document_service", "patterns", "sensitive_patterns_full.csv")),
-                "C:\\Projects\\Anonymizer\\unified_document_service\\patterns\\sensitive_patterns.xlsx",
-                "C:\\Projects\\Anonymizer\\unified_document_service\\patterns\\sensitive_patterns_full.csv"
-            ]
-            
-            for path in possible_paths:
-                if os.path.exists(path):
-                    st.success(f"✅ Найден файл: `{path}`")
-                    st.info("💡 Скопируйте этот путь в поле выше")
-                    break
-            else:
-                st.error("❌ Файл паттернов не найден в стандартных местах")
+    # Sidebar с настройками (скрыт)
+    # with st.sidebar:
+    #     st.header("⚙️ Настройки")
+    #     
+    #     # Файл паттернов
+    #     patterns_file = st.text_area(
+    #         "Файл паттернов", 
+    #         value=os.path.join(UNIFIED_SERVICE_PATH, "patterns/sensitive_patterns.xlsx"),
+    #         help="Путь к Excel/CSV файлу с правилами поиска",
+    #         height=60,
+    #         key="step1_patterns_file"
+    #     )
+    #     
+    #     # Кнопка для поиска файла паттернов
+    #     if st.button("🔍 Найти файл паттернов автоматически", key="step1_find_patterns"):
+    #         possible_paths = [
+    #             os.path.join(UNIFIED_SERVICE_PATH, "patterns", "sensitive_patterns.xlsx"),
+    #             os.path.join(UNIFIED_SERVICE_PATH, "patterns", "sensitive_patterns_full.csv"),
+    #             os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "unified_document_service", "patterns", "sensitive_patterns.xlsx")),
+    #             os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "unified_document_service", "patterns", "sensitive_patterns_full.csv")),
+    #             "C:\\Projects\\Anonymizer\\unified_document_service\\patterns\\sensitive_patterns.xlsx",
+    #             "C:\\Projects\\Anonymizer\\unified_document_service\\patterns\\sensitive_patterns_full.csv"
+    #         ]
+    #         
+    #         for path in possible_paths:
+    #             if os.path.exists(path):
+    #                 st.success(f"✅ Найден файл: `{path}`")
+    #                 st.info("💡 Скопируйте этот путь в поле выше")
+    #                 break
+    #         else:
+    #             st.error("❌ Файл паттернов не найден в стандартных местах")
+    # 
+    #     st.session_state.patterns_file = patterns_file
     
+    # По умолчанию стандартный путь к паттернам
+    patterns_file = os.path.join(UNIFIED_SERVICE_PATH, "patterns/sensitive_patterns.xlsx")
     st.session_state.patterns_file = patterns_file
     
-    # Загрузка файла
+    # Загрузка файла для анонимизации
     uploaded_file = st.file_uploader(
         "Выберите Word документ (.docx)",
         type=['docx'],
@@ -120,6 +165,9 @@ def step1_upload_document():
                     st.session_state.found_data = found_data
                     st.session_state.current_step = 2
                     st.rerun()
+    
+    # Секция деанонимизации
+    display_deanonymization_section()
 
 def step2_review_findings():
     """Шаг 2: Предпросмотр найденных сущностей"""
@@ -127,30 +175,30 @@ def step2_review_findings():
     
     found_data = st.session_state.found_data
     
-    # Sidebar с информацией и настройками
-    with st.sidebar:
-        st.subheader(f"📄 Документ: {st.session_state.uploaded_file.name}")
-        st.markdown("---")
-        st.header("📊 Статистика анализа структурированных данных")
-        
-        if found_data:
-            # Общая статистика
-            total_count = len(found_data)
-            approved_count = sum(1 for item in found_data if item.get('approved', False))
-            st.metric("Всего найдено", total_count)
-            st.metric("К анонимизации", approved_count)
-            st.metric("Исключено", total_count - approved_count)
-            
-            # Статистика по типам
-            st.subheader("📋 По типам данных")
-            df_stats = pd.DataFrame(found_data)
-            type_counts = df_stats['type'].value_counts()
-            for data_type, count in type_counts.items():
-                st.text(f"{data_type}: {count}")
-            
-            # Средняя уверенность
-            avg_confidence = df_stats['confidence'].mean()
-            st.metric("Средняя уверенность", f"{avg_confidence:.0%}")
+    # Sidebar с информацией и настройками (скрыт)
+    # with st.sidebar:
+    #     st.subheader(f"📄 Документ: {st.session_state.uploaded_file.name}")
+    #     st.markdown("---")
+    #     st.header("📊 Статистика анализа структурированных данных")
+    #     
+    #     if found_data:
+    #         # Общая статистика
+    #         total_count = len(found_data)
+    #         approved_count = sum(1 for item in found_data if item.get('approved', False))
+    #         st.metric("Всего найдено", total_count)
+    #         st.metric("К анонимизации", approved_count)
+    #         st.metric("Исключено", total_count - approved_count)
+    #         
+    #         # Статистика по типам
+    #         st.subheader("📋 По типам данных")
+    #         df_stats = pd.DataFrame(found_data)
+    #         type_counts = df_stats['type'].value_counts()
+    #         for data_type, count in type_counts.items():
+    #             st.text(f"{data_type}: {count}")
+    #         
+    #         # Средняя уверенность
+    #         avg_confidence = df_stats['confidence'].mean()
+    #         st.metric("Средняя уверенность", f"{avg_confidence:.0%}")
         
 
     
@@ -686,6 +734,244 @@ def anonymize_document_full_api(uploaded_file, approved_items, patterns_file):
         return None
 
 
+def display_deanonymization_section():
+    """Отображает секцию деанонимизации документов"""
+    
+    st.markdown("---")  # Разделитель
+    st.markdown("### Выбор документов для восстановления")
+    st.markdown("**Восстановление оригинальных данных из ранее анонимизированного документа**")
+    
+    with st.expander("ℹ️ Как работает деанонимизация", expanded=False):
+        st.markdown("""
+        **🎯 Задача:** Заменить UUID обратно на оригинальные чувствительные данные
+        
+        **📋 Что нужно:**
+        1. **Анонимизированный документ** (.docx) - документ с UUID вместо чувствительных данных
+        2. **Таблица замен** (.xlsx или .csv) - соответствие UUID ↔ оригинальные данные
+        
+        **🔄 Процесс:**
+        1. Загрузка анонимизированного документа и таблицы замен
+        2. Анализ соответствий UUID ↔ оригинальные данные
+        3. Обратная замена UUID на исходные чувствительные данные
+        4. Сохранение форматирования документа
+        
+        **✨ Результат:** `d0e62465-8f2a-4b3c-9e1f...` → `admin@company.ru` с исходным форматированием
+        """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 1. Загрузить анонимизированный документ")
+        anonymized_file = st.file_uploader(
+            "Выберите анонимизированный DOCX файл",
+            type=['docx'],
+            key="deanon_docx",
+            help="Документ, который был ранее анонимизирован нашей системой"
+        )
+        
+        if anonymized_file is not None:
+            st.success(f"✅ Загружен: {anonymized_file.name}")
+            st.session_state.deanonymized_doc = anonymized_file
+        
+    with col2:
+        st.markdown("#### 2. Загрузить таблицу замен")
+        
+        # Кнопка загрузки таблицы замен - активна только если загружен документ
+        replacement_file = st.file_uploader(
+            "Выберите файл с соответствиями",
+            type=['xlsx', 'csv'],
+            key="deanon_table",
+            help="Excel или CSV файл с соответствием UUID ↔ оригинальные данные",
+            disabled=(anonymized_file is None)
+        )
+        
+        if replacement_file is not None:
+            st.success(f"✅ Загружена: {replacement_file.name}")
+            st.session_state.replacement_table = replacement_file
+    
+    # Проверяем готовность к деанонимизации
+    if (st.session_state.deanonymized_doc is not None and 
+        st.session_state.replacement_table is not None):
+        
+        st.session_state.deanonymization_ready = True
+        
+        st.markdown("---")
+        
+        # Кнопка деанонимизации
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button(
+                "🔓 Деанонимизировать документ", 
+                key="deanonymize_btn",
+                type="primary",
+                use_container_width=True
+            ):
+                perform_deanonymization()
+    else:
+        st.session_state.deanonymization_ready = False
+
+
+def perform_deanonymization():
+    """Выполняет процесс деанонимизации"""
+    
+    try:
+        with st.spinner("🔄 Выполняется деанонимизация..."):
+            
+            # Создаем временные файлы
+            with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_doc:
+                tmp_doc.write(st.session_state.deanonymized_doc.getvalue())
+                doc_path = tmp_doc.name
+            
+            with tempfile.NamedTemporaryFile(
+                suffix='.xlsx' if st.session_state.replacement_table.name.endswith('.xlsx') else '.csv', 
+                delete=False
+            ) as tmp_table:
+                tmp_table.write(st.session_state.replacement_table.getvalue())
+                table_path = tmp_table.name
+            
+            # Отправляем запрос на деанонимизацию через API
+            response = send_deanonymization_request(doc_path, table_path)
+            
+            if response and response.get('success', False):
+                st.success("🎉 Деанонимизация успешно выполнена!")
+                
+                # Отображаем статистику
+                stats = response.get('statistics', {})
+                display_deanonymization_stats(stats)
+                
+                # Подготавливаем файлы для скачивания
+                deanonymized_content = response.get('deanonymized_document')
+                if deanonymized_content:
+                    
+                    # Кнопки скачивания
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Декодируем base64 содержимое
+                        doc_bytes = base64.b64decode(deanonymized_content)
+                        
+                        st.download_button(
+                            label="📥 Скачать восстановленный документ",
+                            data=doc_bytes,
+                            file_name=f"deanonymized_{st.session_state.deanonymized_doc.name}",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            key="download_deanon_doc"
+                        )
+                    
+                    with col2:
+                        # Отчет о деанонимизации
+                        if 'deanonymization_report' in response:
+                            report_content = response['deanonymization_report']
+                            st.download_button(
+                                label="📊 Скачать отчет о деанонимизации",
+                                data=report_content,
+                                file_name=f"deanonymization_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key="download_deanon_report"
+                            )
+                else:
+                    st.error("❌ Не удалось получить деанонимизированный документ")
+            else:
+                error_msg = response.get('error', 'Неизвестная ошибка') if response else 'Нет ответа от сервера'
+                st.error(f"❌ Ошибка при деанонимизации: {error_msg}")
+            
+            # Очищаем временные файлы
+            try:
+                os.unlink(doc_path)
+                os.unlink(table_path)
+            except:
+                pass
+                
+    except Exception as e:
+        st.error(f"❌ Ошибка при выполнении деанонимизации: {str(e)}")
+
+
+def send_deanonymization_request(doc_path: str, table_path: str) -> dict:
+    """Отправляет запрос на деанонимизацию через API"""
+    
+    try:
+        # Подготавливаем файлы для отправки
+        files = {
+            'document': ('document.docx', open(doc_path, 'rb'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+            'replacement_table': ('replacements.xlsx', open(table_path, 'rb'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        }
+        
+        # Отправляем запрос
+        response = requests.post(
+            f"{API_BASE_URL}/deanonymize",
+            files=files,
+            timeout=120  # 2 минуты на обработку
+        )
+        
+        # Закрываем файлы
+        for file_tuple in files.values():
+            file_tuple[1].close()
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"❌ Ошибка API: {response.status_code} - {response.text}")
+            return None
+            
+    except requests.exceptions.Timeout:
+        st.error("❌ Превышено время ожидания ответа от сервера")
+        return None
+    except requests.exceptions.ConnectionError:
+        st.error(f"❌ Не удалось подключиться к серверу {API_BASE_URL}")
+        st.info("💡 Убедитесь, что Gateway сервис запущен на порту 8002")
+        return None
+    except Exception as e:
+        st.error(f"❌ Ошибка при отправке запроса: {str(e)}")
+        return None
+
+
+def display_deanonymization_stats(stats: dict):
+    """Отображает статистику деанонимизации"""
+    
+    if not stats:
+        return
+    
+    st.markdown("### 📊 Статистика деанонимизации")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            "🔄 UUID заменено",
+            stats.get('total_replacements', 0)
+        )
+    
+    with col2:
+        st.metric(
+            "✅ Успешных замен",
+            stats.get('successful_replacements', 0)
+        )
+    
+    with col3:
+        st.metric(
+            "❌ Ошибок замен",
+            stats.get('failed_replacements', 0)
+        )
+    
+    with col4:
+        success_rate = 0
+        total = stats.get('total_replacements', 0)
+        successful = stats.get('successful_replacements', 0)
+        if total > 0:
+            success_rate = round((successful / total) * 100, 1)
+        
+        st.metric(
+            "📈 Успешность",
+            f"{success_rate}%"
+        )
+    
+    # Детальная информация
+    if 'replacement_details' in stats:
+        with st.expander("📋 Детали замен", expanded=False):
+            details_df = pd.DataFrame(stats['replacement_details'])
+            st.dataframe(details_df, use_container_width=True)
+
+
 def main():
     """Главная функция Streamlit приложения"""
     
@@ -694,23 +980,20 @@ def main():
         page_title="Document Anonymizer - Frontend",
         page_icon="🔒",
         layout="wide",
-        initial_sidebar_state="expanded"
+        initial_sidebar_state="collapsed"
     )
     
-    # CSS для увеличения ширины боковой панели и оптимизации отступов
+    # CSS для скрытия боковой панели
     st.markdown("""
     <style>
-    .css-1d391kg {
-        width: 350px;
-    }
-    .css-1lcbmhc {
-        width: 350px;
-    }
+    /* Скрываем боковую панель */
     section[data-testid="stSidebar"] {
-        width: 350px !important;
+        display: none !important;
     }
-    section[data-testid="stSidebar"] > div {
-        width: 350px !important;
+    
+    /* Убираем кнопку сворачивания/разворачивания */
+    button[title="Open sidebar"], button[title="Close sidebar"] {
+        display: none !important;
     }
     
     /* Уменьшение отступов для более компактного интерфейса */
@@ -756,32 +1039,43 @@ def main():
     
     if current_step == 1:
         # Заголовок и описание только на первом шаге
-        st.title("🔒 Анонимайзер docx-документов")
+        st.title("Анонимайзер docx-документов")
         st.markdown("**Анонимизация DOCX документов с заменой чувствительных данных на UUID и полным сохранением форматирования**")
         # Показываем описание и инструкции только на первом шаге
-        # Краткое описание функционала
-        with st.expander("ℹ️ Что делает система", expanded=False):
+        # Объединенное описание функционала и инструкций
+        with st.expander("ℹ️ Как работает анонимизация", expanded=False):
             st.markdown("""
             **🎯 Основная задача:** Заменить чувствительные данные (email, телефоны, коды документов) на уникальные UUID 
             с **полным сохранением исходного форматирования** документа.
             
-            **🔄 Процесс:**
-            1. Анализ документа и поиск чувствительных данных
-            2. Показ найденных данных для подтверждения пользователем  
-            3. **Точечная замена** на UUID с сохранением всех стилей
-            4. Генерация отчетов о выполненных заменах
+            **🔄 Пошаговый процесс анонимизации:**
+            
+            **1. 📂 Загрузка документа**
+            - Загрузите DOCX документ в разделе "Выберите документ для анонимизации" ниже
+            - Система автоматически проанализирует структуру документа
+            
+            **2. 🔍 Анализ и поиск данных**
+            - Автоматический поиск чувствительных данных (email, телефоны, ИНН, паспорта и др.)
+            - Использование современных NLP технологий и регулярных выражений
+            
+            **3. ✅ Подтверждение замен**
+            - Просмотр найденных данных в разделе "Шаг 2"
+            - Выберите данные для анонимизации с помощью чекбоксов
+            - Добавьте комментарии при необходимости
+            
+            **4. 🔄 Точечная замена**
+            - Замена выбранных данных на уникальные UUID
+            - **Полное сохранение форматирования:** шрифт, цвет, размер, стили остаются без изменений
+            
+            **5. 📥 Получение результатов**
+            - Скачивание анонимизированного документа
+            - Получение таблицы соответствий (UUID ↔ оригинальные данные)
+            - Детальные отчеты о выполненных заменах
             
             **✨ Результат:** `admin@company.ru` → `d0e62465-8f2a-4b3c-9e1f...` с тем же шрифтом, цветом, размером!
+            
+            **🔒 Безопасность:** Все оригинальные данные сохраняются в зашифрованной таблице замен для возможности восстановления.
             """)
-        
-        # Инструкция по использованию
-        st.markdown("""
-        ### 📋 Инструкция по использованию:
-        1. **📂 Загрузите DOCX документ** в разделе "Шаг 1" ниже
-        2. **🔍 Просмотрите найденные данные** в разделе "Шаг 2"
-        3. **✅ Подтвердите замены** с помощью чекбоксов и комментариев
-        4. **📥 Скачайте результат** - анонимизированный документ и отчеты
-        """)
         
         step1_upload_document()
     elif current_step == 2:

@@ -7,6 +7,9 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional, Set
 import uuid
+import re
+from dataclasses import dataclass
+from collections import defaultdict
 
 
 class DetectionStrategy(ABC):
@@ -245,8 +248,16 @@ class DetectionStrategyFactory:
         Returns:
             Экземпляр стратегии
         """
+        # Импортируем гибридную стратегию только когда нужна
+        if strategy_name == 'hybrid_government':
+            try:
+                from hybrid_government_strategy import HybridGovernmentStrategy
+                return HybridGovernmentStrategy(config_settings)
+            except ImportError as e:
+                raise ValueError(f"Cannot import HybridGovernmentStrategy: {e}")
+        
         if strategy_name not in cls.STRATEGIES:
-            raise ValueError(f"Unknown strategy: {strategy_name}. Available: {list(cls.STRATEGIES.keys())}")
+            raise ValueError(f"Unknown strategy: {strategy_name}. Available: {list(cls.STRATEGIES.keys())} + 'hybrid_government'")
         
         strategy_class = cls.STRATEGIES[strategy_name]
         return strategy_class(config_settings)

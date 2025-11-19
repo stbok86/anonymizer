@@ -509,6 +509,130 @@ async def download_file(filename: str):
             content={"error": f"Файл {filename} не найден"}
         )
 
+
+@app.post("/deanonymize")
+async def deanonymize_document(
+    document: UploadFile = File(..., description="Анонимизированный DOCX документ"),
+    replacement_table: UploadFile = File(..., description="Таблица соответствий UUID ↔ оригинальные данные")
+):
+    """
+    Деанонимизация документа - обратная замена UUID на оригинальные данные
+    
+    Args:
+        document: Анонимизированный DOCX файл
+        replacement_table: Excel или CSV файл с соответствиями UUID ↔ оригинальные данные
+        
+    Returns:
+        JSON с деанонимизированным документом в base64 и статистикой замен
+    """
+    
+    print(f"🔓 [DEANONYMIZATION] Начало процесса деанонимизации")
+    print(f"📄 Документ: {document.filename}")
+    print(f"📊 Таблица замен: {replacement_table.filename}")
+    
+    doc_temp_path = None
+    table_temp_path = None
+    output_temp_path = None
+    
+    try:
+        # Создаем временные файлы
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as doc_temp:
+            content = await document.read()
+            doc_temp.write(content)
+            doc_temp_path = doc_temp.name
+        
+        with tempfile.NamedTemporaryFile(
+            suffix='.xlsx' if replacement_table.filename.endswith('.xlsx') else '.csv',
+            delete=False
+        ) as table_temp:
+            table_content = await replacement_table.read()
+            table_temp.write(table_content)
+            table_temp_path = table_temp.name
+        
+        print(f"✅ Временные файлы созданы")
+        print(f"📄 Документ: {doc_temp_path}")
+        print(f"📊 Таблица: {table_temp_path}")
+        
+        # Выполняем деанонимизацию
+        from document_deanonymizer import DocumentDeanonymizer
+        
+        deanonymizer = DocumentDeanonymizer()
+        result = deanonymizer.deanonymize_document(doc_temp_path, table_temp_path)
+        
+        if result['success']:
+            print(f"🎉 Деанонимизация успешно выполнена")
+            print(f"📊 Статистика: {result['statistics']}")
+            
+            # Кодируем деанонимизированный документ в base64
+            output_path = result['output_path']
+            with open(output_path, 'rb') as f:
+                document_content = base64.b64encode(f.read()).decode('utf-8')
+            
+            response_data = {
+                'success': True,
+                'deanonymized_document': document_content,
+                'statistics': result['statistics'],
+                'message': 'Документ успешно деанонимизирован'
+            }
+            
+            # Добавляем отчет, если есть
+            if 'report_path' in result:
+                with open(result['report_path'], 'rb') as f:
+                    report_content = base64.b64encode(f.read()).decode('utf-8')
+                response_data['deanonymization_report'] = report_content
+            
+            # Очищаем временный выходной файл
+            try:
+                os.unlink(output_path)
+                if 'report_path' in result:
+                    os.unlink(result['report_path'])
+            except:
+                pass
+            
+            return JSONResponse(content=response_data)
+        else:
+            error_msg = result.get('error', 'Неизвестная ошибка при деанонимизации')
+            print(f"❌ Ошибка деанонимизации: {error_msg}")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    'success': False,
+                    'error': error_msg,
+                    'details': result.get('details', {})
+                }
+            )
+            
+    except ImportError as e:
+        error_msg = f"Модуль деанонимизации не найден: {str(e)}"
+        print(f"❌ {error_msg}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                'success': False,
+                'error': error_msg,
+                'message': 'DocumentDeanonymizer не доступен'
+            }
+        )
+    except Exception as e:
+        error_msg = f"Внутренняя ошибка при деанонимизации: {str(e)}"
+        print(f"❌ {error_msg}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                'success': False,
+                'error': error_msg
+            }
+        )
+    finally:
+        # Очищаем временные файлы
+        for temp_path in [doc_temp_path, table_temp_path]:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+
+
 # Запуск сервера при прямом выполнении
 if __name__ == "__main__":
     import uvicorn
