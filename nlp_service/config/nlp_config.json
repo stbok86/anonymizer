@@ -187,6 +187,39 @@
           }
         }
       },
+      "information_system": {
+        "enabled_methods": ["spacy_ner"],
+        "priority_order": [1],
+        "strategy": "information_system",
+        "fallback_enabled": true,
+        "max_results": 10,
+        "method_settings": {
+          "spacy_ner": {
+            "min_confidence": 0.7,
+            "spacy_model": "ru_core_news_sm",
+            "extend_spans": true,
+            "detect_abbreviations": true,
+            "min_private_part_length": 2,
+            "privacy_threshold": 0.6
+          }
+        }
+      },
+      "contract_number": {
+        "enabled_methods": ["regex", "context_matcher"],
+        "priority_order": [1, 2],
+        "strategy": "contract_number",
+        "fallback_enabled": true,
+        "max_results": 5,
+        "method_settings": {
+          "regex": {
+            "min_confidence": 0.8
+          },
+          "context_matcher": {
+            "min_confidence": 0.75,
+            "context_window": 20
+          }
+        }
+      },
       "financial_amount": {
         "enabled_methods": ["regex", "context_matcher"],
         "priority_order": [1, 2],
@@ -240,6 +273,33 @@
           "администрация", "правительство", "дума", "совет", "федеральный",
           "государственный", "муниципальный", "краевой", "областной", "региональный"
         ]
+      },
+      "information_system": {
+        "description": "Специализированная стратегия для детекции информационных систем",
+        "core_keywords": ["система", "платформа", "портал", "комплекс", "ресурс"],
+        "system_types": {
+          "unified": ["единая", "единой", "единую"],
+          "government": ["государственная", "государственной", "федеральная"],
+          "automated": ["автоматизированная", "автоматизированной"]
+        },
+        "privacy_indicators": [
+          "области", "региона", "края", "республики", "города",
+          "управления", "обеспечения", "контроля", "ведения",
+          "организаций", "предприятий", "учреждений",
+          "деятельности", "процессов", "операций"
+        ],
+        "known_abbreviations": [
+          "ЕИС", "АИС", "ГИС", "ПГИС", "ЕГИС",
+          "ГАС", "ФГИС", "СМЭВ", "ФИС", "РИС",
+          "ЕИП", "ГИП", "ЕСИА", "ЕПГУ"
+        ],
+        "confidence_modifiers": {
+          "has_long_description": 0.05,
+          "has_government_prefix": 0.05,
+          "is_abbreviation": -0.1,
+          "min_confidence": 0.5,
+          "max_confidence": 0.95
+        }
       }
     },
     

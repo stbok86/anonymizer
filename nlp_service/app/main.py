@@ -45,6 +45,7 @@ class Detection(BaseModel):
     position: Dict[str, int]
     method: str
     uuid: str
+    anonymized_text: Optional[str] = None  # Добавляем анонимизированный текст
     block_id: str
 
 class AnalyzeResponse(BaseModel):

@@ -256,8 +256,24 @@ class DetectionStrategyFactory:
             except ImportError as e:
                 raise ValueError(f"Cannot import HybridGovernmentStrategy: {e}")
         
+        # Импортируем стратегию информационных систем
+        if strategy_name == 'information_system':
+            try:
+                from information_system_strategy import InformationSystemStrategy
+                return InformationSystemStrategy(config_settings)
+            except ImportError as e:
+                raise ValueError(f"Cannot import InformationSystemStrategy: {e}")
+        
+        # Импортируем стратегию номеров контрактов
+        if strategy_name == 'contract_number':
+            try:
+                from contract_number_strategy import ContractNumberStrategy
+                return ContractNumberStrategy(config_settings)
+            except ImportError as e:
+                raise ValueError(f"Cannot import ContractNumberStrategy: {e}")
+        
         if strategy_name not in cls.STRATEGIES:
-            raise ValueError(f"Unknown strategy: {strategy_name}. Available: {list(cls.STRATEGIES.keys())} + 'hybrid_government'")
+            raise ValueError(f"Unknown strategy: {strategy_name}. Available: {list(cls.STRATEGIES.keys())} + 'hybrid_government' + 'information_system' + 'contract_number'")
         
         strategy_class = cls.STRATEGIES[strategy_name]
         return strategy_class(config_settings)

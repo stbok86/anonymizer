@@ -84,6 +84,10 @@ class NLPAdapter:
         
         # Инициализируем централизованную систему детекции
         self.detection_factory = DetectionMethodFactory(self.config)
+        
+        # Инициализируем и кешируем стратегию информационных систем
+        self._is_strategy = None
+        self._init_information_system_strategy()
     
     def _load_spacy_model(self):
         """Загружает русскую spaCy модель согласно конфигурации"""
@@ -400,15 +404,10 @@ class NLPAdapter:
         # Сохраняем оригинальный текст для mapping позиций
         original_text = text
         
-        # Нормализуем текст для лучшего сопоставления фраз
-        normalized_text = self.text_normalizer.normalize_text(text)
-        
-        if normalized_text != original_text:
-            print(f"🔧 Текст нормализован: '{normalized_text[:50]}...'")
-            # Используем нормализованный текст для обработки
-            processing_text = normalized_text
-        else:
-            processing_text = original_text
+        # ДЛЯ ИНФОРМАЦИОННЫХ СИСТЕМ НЕ ИСПОЛЬЗУЕМ НОРМАЛИЗАЦИЮ
+        # Нормализация текста может нарушить позиции для замены
+        # Используем оригинальный текст напрямую
+        processing_text = original_text
         
         # Обрабатываем текст через spaCy один раз для всех методов
         doc = self.nlp(processing_text)
@@ -425,11 +424,7 @@ class NLPAdapter:
             print(f"🔎 Проверяем категорию: {category}")
             category_detections = self._detect_for_category(category, processing_text, doc)
             
-            # Если мы использовали нормализованный текст, корректируем позиции
-            if processing_text != original_text:
-                category_detections = self._map_positions_to_original(
-                    category_detections, original_text, normalized_text
-                )
+            # Позиции уже корректны, так как используем оригинальный текст
             
             if category_detections:
                 print(f"✅ Категория {category}: найдено {len(category_detections)} элементов")
@@ -494,7 +489,12 @@ class NLPAdapter:
         
         # Применяем стратегию комбинирования
         strategy_settings = self.config.get_detection_strategy_settings(strategy_name)
-        strategy = DetectionStrategyFactory.create_strategy(strategy_name, strategy_settings)
+        
+        # Для информационных систем используем кешированную стратегию
+        if strategy_name == 'information_system' and self._is_strategy is not None:
+            strategy = self._is_strategy
+        else:
+            strategy = DetectionStrategyFactory.create_strategy(strategy_name, strategy_settings)
         
         combined_results = strategy.combine_results(results_by_method)
         
@@ -681,6 +681,10 @@ class NLPAdapter:
         """Извлекает spaCy NER сущности для конкретной категории"""
         entities = []
         
+        # Специальная обработка для информационных систем
+        if category == 'information_system':
+            return self._extract_information_systems(doc)
+        
         # Маппинг spaCy меток на наши категории из конфига
         category_map = self.config.get_spacy_entity_mapping()
         
@@ -702,6 +706,37 @@ class NLPAdapter:
                 entities.append(detection)
         
         return entities
+    
+    def _init_information_system_strategy(self):
+        """Инициализирует и кеширует стратегию информационных систем при старте"""
+        try:
+            from information_system_strategy import InformationSystemStrategy
+            strategy_settings = self.config.get_detection_strategy_settings('information_system')
+            # Передаем уже загруженную spaCy модель для избежания повторной загрузки
+            self._is_strategy = InformationSystemStrategy(strategy_settings, self.nlp)
+            print("🔄 Стратегия информационных систем инициализирована при старте с переданной spaCy моделью")
+        except ImportError as e:
+            print(f"⚠️ Не удалось импортировать InformationSystemStrategy: {e}")
+            self._is_strategy = None
+        except Exception as e:
+            print(f"⚠️ Ошибка инициализации стратегии ИС: {e}")
+            self._is_strategy = None
+    
+    def _extract_information_systems(self, doc: Doc) -> List[Dict[str, Any]]:
+        """Специальная функция для извлечения информационных систем"""
+        try:
+            # Используем уже инициализированную стратегию
+            if self._is_strategy is None:
+                return []
+            
+            # Запускаем детекцию с кешированной стратегией
+            detections = self._is_strategy.detect_information_systems_in_text(doc.text, doc)
+            
+            return detections
+            
+        except Exception as e:
+            print(f"⚠️ Ошибка при детекции информационных систем: {e}")
+            return []
     
     def _extract_regex_patterns_for_category(self, text: str, category: str) -> List[Dict[str, Any]]:
         """Извлекает regex паттерны для конкретной категории"""
