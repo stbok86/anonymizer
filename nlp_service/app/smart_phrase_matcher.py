@@ -273,6 +273,7 @@ class SmartPhraseMatcher:
                 'confidence': match.confidence,
                 'category': category,
                 'method': method,
+                'uuid': 'placeholder',  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
                 'additional_info': {
                     'pattern_matched': match.pattern_id,
                     'phrase_length': match.length,

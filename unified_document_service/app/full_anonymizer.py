@@ -96,7 +96,6 @@ class FullAnonymizer:
                             match = {
                                 'block_id': block['block_id'],
                                 'original_value': pattern['original_value'],
-                                'uuid': pattern['uuid'],
                                 'position': pattern['position'],
                                 'element': block.get('element'),
                                 'category': pattern['category'],
@@ -152,7 +151,6 @@ class FullAnonymizer:
                                 match = {
                                     'block_id': block_info['block_id'],
                                     'original_value': detection['original_value'],
-                                    'uuid': detection['uuid'],
                                     'position': {
                                         'start': relative_start,
                                         'end': relative_end,
@@ -188,18 +186,35 @@ class FullAnonymizer:
                 
                 print(f"✅ Итого уникальных совпадений: {len(all_matches)}")
                 
-                # Отладочный вывод детекций
-                if all_matches:
-                    print(f"\n🔍 Детали найденных совпадений:")
-                    for i, match in enumerate(all_matches):
-                        print(f"  {i+1}. Категория: {match.get('category', 'N/A')}")
-                        print(f"     Значение: '{match.get('original_value', 'N/A')}'")
-                        print(f"     UUID: {match.get('uuid', 'N/A')}")
-                        print(f"     Блок: {match.get('block_id', 'N/A')}")
-                        print(f"     Элемент: {type(match.get('element', 'N/A'))}")
-                        print(f"     Позиция: {match.get('position', 'N/A')}")
-                        print(f"     Источник: {match.get('source', 'N/A')}")
-                        print()
+                # --- ДОБАВЛЯЕМ АНАЛИЗ И АНОНИМИЗАЦИЮ МЕТАДАННЫХ ---
+                from docx_metadata_handler import DocxMetadataHandler
+                metadata_handler = DocxMetadataHandler(input_path)
+                metadata = metadata_handler.extract_metadata()
+                # Собираем все значения метаданных в список для анализа
+                metadata_matches = []
+                for section_name, section in metadata.items():
+                    if isinstance(section, dict):
+                        for value in section.values():
+                            if value:
+                                patterns = self.rule_engine.find_patterns_in_text(value)
+                                for pattern in patterns:
+                                    already_found = any(m['original_value'] == value for m in all_matches)
+                                    if not already_found:
+                                        metadata_matches.append({
+                                            'block_id': f'metadata_{pattern["category"]}',
+                                            'original_value': value,
+                                            'position': {'start': 0, 'end': len(value)},
+                                            'element': None,
+                                            'category': pattern['category'],
+                                            'confidence': pattern.get('confidence', 1.0),
+                                            'source': 'metadata',
+                                            'method': 'regex',
+                                            'metadata_section': section_name  # <--- Ключевой момент!
+                                        })
+                if metadata_matches:
+                    print(f"🔍 [METADATA] Найдено чувствительных значений в метаданных: {len(metadata_matches)}")
+                all_matches.extend(metadata_matches)
+                # --- КОНЕЦ ДОБАВЛЕНИЯ АНАЛИЗА МЕТАДАННЫХ ---
                 
             else:
                 # Используем предоставленную таблицу замен
@@ -208,11 +223,18 @@ class FullAnonymizer:
             
             # ЭТАП 4: Применение замен с сохранением форматирования
             replacement_stats = self.formatter.apply_replacements_to_document(doc, all_matches)
-            
-            # ЭТАП 5: Сохранение анонимизированного документа
+            # ЭТАП 5: Сохранение анонимизированного документа (текст)
             doc.save(output_path)
-            
-            # ЭТАП 6: Генерация отчетов
+            # ЭТАП 6: Анонимизация метаданных (если были найдены)
+            if metadata_matches:
+                # Генерируем UUID для найденных значений
+                for m in metadata_matches:
+                    from uuid_mapper import UUIDMapper
+                    uuid_mapper = self.formatter.uuid_mapper if hasattr(self.formatter, 'uuid_mapper') else UUIDMapper()
+                    m['uuid'] = uuid_mapper.get_uuid_for_text(m['original_value'], m['category'])
+                # Анонимизируем метаданные в docx
+                metadata_handler.anonymize_metadata_in_docx(output_path, output_path, metadata_matches)
+            # ЭТАП 7: Генерация отчетов
             results = {
                 'status': 'success',
                 'message': 'Документ успешно анонимизирован',
@@ -221,13 +243,11 @@ class FullAnonymizer:
                 'matches_count': len(all_matches),
                 'anonymized_document_path': output_path
             }
-            
             # Генерация Excel отчета
             if excel_report_path:
                 excel_data = self._generate_excel_report(processed_blocks, all_matches)
                 results['excel_report_path'] = excel_report_path
                 results['excel_report_generated'] = True
-            
             # Генерация JSON журнала
             if json_ledger_path:
                 ledger_data = self._generate_json_ledger(all_matches, replacement_stats)
@@ -235,7 +255,6 @@ class FullAnonymizer:
                     json.dump(ledger_data, f, ensure_ascii=False, indent=2)
                 results['json_ledger_path'] = json_ledger_path
                 results['json_ledger_generated'] = True
-            
             return results
             
         except Exception as e:
@@ -286,22 +305,27 @@ class FullAnonymizer:
                 block_id = item.get('block_id')
                 original_value = item.get('original_value', '')
                 position = item.get('position', {})
-                
+                uuid_val = item.get('uuid', '')
+
+                # Диагностика некорректных uuid
+                if not uuid_val or str(uuid_val).strip().lower() == 'placeholder':
+                    print(f"🚨 [BUG] Некорректный uuid для значения '{original_value}' (block_id={block_id}): '{uuid_val}'")
+
                 # Создаем уникальный ключ для дедупликации
                 dedup_key = (block_id, original_value, position.get('start'), position.get('end'))
-                
+
                 if dedup_key in seen_replacements:
                     print(f"🔄 [FULL_ANONYMIZER] Пропускаем дубликат: '{original_value}' в {block_id}")
                     continue
-                    
+
                 seen_replacements.add(dedup_key)
-                
+
                 if block_id in blocks_map:
                     block = blocks_map[block_id]
                     replacement = {
                         'block_id': block_id,
                         'original_value': original_value,
-                        'uuid': item['uuid'],
+                        'uuid': uuid_val,
                         'position': position,
                         'element': block.get('element'),
                         'category': item['category']
@@ -317,9 +341,33 @@ class FullAnonymizer:
                 print(f"⚠️  [FULL_ANONYMIZER] Доступные block_id: {list(blocks_map.keys())}")
 
             # Применяем замены
-            replacement_stats = self.formatter.apply_replacements_to_document(doc, replacements_for_formatting)            # Сохраняем результат
+            replacement_stats = self.formatter.apply_replacements_to_document(doc, replacements_for_formatting)
             doc.save(output_path)
-            
+
+            # --- СКВОЗНАЯ АНОНИМИЗАЦИЯ ДЛЯ HEADER ---
+            # Для каждого выбранного блока типа header делаем замену и в метаданных
+            header_items = [item for item in selected_items if 'header' in (item.get('block_id') or '').lower()]
+            if header_items:
+                print(f"🔧 [FULL_ANONYMIZER] Найдено header-элементов для сквозной анонимизации: {len(header_items)}")
+                # Готовим список для метаданных: для каждого header original_value и uuid (если нет - генерируем)
+                from uuid_mapper import UUIDMapper
+                uuid_mapper = self.formatter.uuid_mapper if hasattr(self.formatter, 'uuid_mapper') else UUIDMapper()
+                metadata_items = []
+                for h in header_items:
+                    uuid_val = h.get('uuid')
+                    if not uuid_val or str(uuid_val).strip().lower() == 'placeholder':
+                        uuid_val = uuid_mapper.get_uuid_for_text(h['original_value'], h['category'])
+                    for section in ['core', 'app', 'custom']:
+                        metadata_items.append({
+                            'original_value': h['original_value'],
+                            'uuid': uuid_val,
+                            'category': h['category'],
+                            'metadata_section': section,
+                        })
+                from docx_metadata_handler import DocxMetadataHandler
+                metadata_handler = DocxMetadataHandler(output_path)
+                metadata_handler.anonymize_metadata_in_docx(output_path, output_path, metadata_items)
+
             return {
                 'status': 'success',
                 'message': f'Селективная анонимизация завершена. Обработано {len(selected_items)} элементов.',
@@ -345,7 +393,7 @@ class FullAnonymizer:
                     'Блок ID': match.get('block_id', ''),
                     'Категория': match.get('category', ''),
                     'Оригинальное значение': match.get('original_value', ''),
-                    'UUID замены': match.get('uuid', ''),
+                    'UUID замены': 'генерируется при замене',
                     'Позиция начала': match.get('position', {}).get('start', ''),
                     'Позиция конца': match.get('position', {}).get('end', ''),
                     'Уверенность': match.get('confidence', '')
@@ -366,7 +414,7 @@ class FullAnonymizer:
             'replacement_statistics': stats,
             'replacements': [
                 {
-                    'uuid': match.get('uuid', str(uuid.uuid4())),
+                    'uuid': match.get('uuid', '[UUID_WILL_BE_GENERATED]'),
                     'category': match.get('category', ''),
                     'original_value': match.get('original_value', ''),
                     'block_id': match.get('block_id', ''),

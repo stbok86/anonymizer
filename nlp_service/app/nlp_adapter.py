@@ -671,7 +671,7 @@ class NLPAdapter:
                     },
                     'method': method_detail,
                     'spacy_label': ent.label_,  # Добавляем оригинальную метку spaCy
-                    'uuid': str(uuid.uuid4())
+                    'uuid': 'placeholder'  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
                 }
                 entities.append(detection)
         
@@ -965,7 +965,7 @@ class NLPAdapter:
                                 'end': match.end()
                             },
                             'method': 'regex',
-                            'uuid': str(uuid.uuid4())
+                            'uuid': 'placeholder'  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
                         }
                         detections.append(detection)
                 
@@ -998,7 +998,7 @@ class NLPAdapter:
                     'end': span.end_char
                 },
                 'method': 'phrase_matcher',
-                'uuid': str(uuid.uuid4())
+                'uuid': 'placeholder'  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
             }
             detections.append(detection)
         
@@ -1027,7 +1027,7 @@ class NLPAdapter:
                             'end': token.idx + len(token.text)
                         },
                         'method': 'morphological_enhanced',
-                        'uuid': str(uuid.uuid4())
+                        'uuid': 'placeholder'  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
                     }
                     detections.append(detection)
                 elif self._is_likely_person_name(token, doc):
@@ -1041,7 +1041,7 @@ class NLPAdapter:
                             'end': token.idx + len(token.text)
                         },
                         'method': 'morphological',
-                        'uuid': str(uuid.uuid4())
+                        'uuid': 'placeholder'  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
                     }
                     detections.append(detection)
         
@@ -1106,7 +1106,7 @@ class NLPAdapter:
                     'end': span.end_char
                 },
                 'method': 'custom_matcher',
-                'uuid': str(uuid.uuid4())
+                'uuid': 'placeholder'  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
             }
             detections.append(detection)
         

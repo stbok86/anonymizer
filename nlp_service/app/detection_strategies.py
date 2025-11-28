@@ -221,7 +221,7 @@ class WeightedAverageStrategy(DetectionStrategy):
         combined = best_detection.copy()
         combined['confidence'] = weighted_confidence / total_weight
         combined['method'] = 'weighted_combination'
-        combined['uuid'] = str(uuid.uuid4())
+        # UUID будет генерироваться централизованно в FormatterApplier
         
         return combined
 

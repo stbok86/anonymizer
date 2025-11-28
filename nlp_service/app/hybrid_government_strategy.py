@@ -269,7 +269,7 @@ class HybridGovernmentStrategy(DetectionStrategy):
                 'confidence': match.confidence,
                 'category': 'government_org',
                 'method': f"hybrid_{match.method}",
-                'uuid': str(uuid.uuid4()),
+                'uuid': 'placeholder',  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
                 'hybrid_info': {
                     'organization_type': match.organization_type,
                     'source_method': match.method,

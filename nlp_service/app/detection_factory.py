@@ -59,7 +59,7 @@ class DetectionMethodFactory:
                 'end': position[1]
             },
             'method': method,
-            'uuid': str(uuid.uuid4())
+            'uuid': 'placeholder'  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
         }
         
         # Добавляем дополнительную информацию если есть

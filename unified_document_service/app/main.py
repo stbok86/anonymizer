@@ -68,7 +68,7 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
     """
     Анализ документа: парсинг → поиск чувствительных данных (без анонимизации)
     """
-    print(f"🔍 [DEBUG] analyze_document вызван с patterns_file: {patterns_file}")
+    # print(f"🔍 [DEBUG] analyze_document вызван с patterns_file: {patterns_file}")
     
     # Сохраняем загруженный файл
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
@@ -76,7 +76,7 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
         tmp_path = tmp.name
     
     try:
-        print(f"🔍 [DEBUG] Загружен файл: {file.filename}")
+        # print(f"🔍 [DEBUG] Загружен файл: {file.filename}")
         
         # ЭТАП 1: Загрузка документа
         doc = Document(tmp_path)
@@ -84,10 +84,10 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
         # ЭТАП 2: Извлечение блоков
         builder = BlockBuilder()
         blocks = builder.build_blocks(doc)
-        print(f"🔍 [DEBUG] Извлечено блоков: {len(blocks)}")
+        # print(f"🔍 [DEBUG] Извлечено блоков: {len(blocks)}")
         
         # ЭТАП 3: Поиск чувствительных данных
-        print(f"🔍 [DEBUG] Начинаем поиск чувствительных данных с файлом паттернов: {patterns_file}")
+        # print(f"🔍 [DEBUG] Начинаем поиск чувствительных данных с файлом паттернов: {patterns_file}")
         rule_engine = RuleEngineAdapter(patterns_file)
         processed_blocks = rule_engine.apply_rules_to_blocks(blocks)
         
@@ -100,7 +100,6 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
                         'block_id': block['block_id'],
                         'category': pattern['category'],
                         'original_value': pattern['original_value'],
-                        'uuid': pattern['uuid'],
                         'position': pattern['position'],
                         'confidence': pattern.get('confidence', 1.0),
                         'method': 'regex',  # Rule Engine всегда использует regex
@@ -109,12 +108,12 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
                     }
                     rule_engine_items.append(found_item)
         
-        print(f"🔍 [DEBUG] Rule Engine нашел: {len(rule_engine_items)} элементов")
+        # print(f"🔍 [DEBUG] Rule Engine нашел: {len(rule_engine_items)} элементов")
         
         # ЭТАП 4: NLP анализ тех же блоков
         nlp_items = []
         try:
-            print(f"🧠 [DEBUG] Начинаем NLP анализ {len(blocks)} блоков...")
+            # print(f"🧠 [DEBUG] Начинаем NLP анализ {len(blocks)} блоков...")
             
             # Подготавливаем блоки для NLP Service
             text_blocks = [
@@ -133,7 +132,7 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
                     "options": {"confidence_threshold": 0.6}
                 }
                 
-                print(f"🧠 [DEBUG] Отправляем в NLP Service {len(text_blocks)} блоков")
+                # print(f"🧠 [DEBUG] Отправляем в NLP Service {len(text_blocks)} блоков")
                 
                 nlp_response = requests.post(
                     f"{NLP_SERVICE_URL}/analyze",
@@ -141,15 +140,15 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
                     timeout=60
                 )
                 
-                print(f"🧠 [DEBUG] NLP Service ответил: {nlp_response.status_code}")
+                # print(f"🧠 [DEBUG] NLP Service ответил: {nlp_response.status_code}")
                 
                 if nlp_response.status_code == 200:
                     nlp_result = nlp_response.json()
                     
-                    print(f"🧠 [DEBUG] NLP Response структура:")
-                    print(f"  success: {nlp_result.get('success', 'НЕ НАЙДЕН')}")
-                    print(f"  detections: {nlp_result.get('detections', 'НЕ НАЙДЕНО')}")
-                    print(f"  Полный ответ: {nlp_result}")
+                    # print(f"🧠 [DEBUG] NLP Response структура:")
+                    # print(f"  success: {nlp_result.get('success', 'НЕ НАЙДЕН')}")
+                    # print(f"  detections: {nlp_result.get('detections', 'НЕ НАЙДЕНО')}")
+                    # print(f"  Полный ответ: {nlp_result}")
                     
                     if nlp_result.get('success', False) and 'detections' in nlp_result:
                         nlp_counter = len(rule_engine_items)
@@ -169,16 +168,19 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
                             nlp_items.append(nlp_item)
                             nlp_counter += 1
                         
-                        print(f"🧠 [DEBUG] NLP Service нашел: {len(nlp_result['detections'])} элементов")
+                        # print(f"🧠 [DEBUG] NLP Service нашел: {len(nlp_result['detections'])} элементов")
                     else:
-                        print(f"🧠 [DEBUG] NLP Service не нашел чувствительных данных или вернул success=false")
+                        # print(f"🧠 [DEBUG] NLP Service не нашел чувствительных данных или вернул success=false")
+                        pass
                 else:
-                    print(f"🧠 [DEBUG] NLP Service error: {nlp_response.status_code} - {nlp_response.text}")
+                    # print(f"🧠 [DEBUG] NLP Service error: {nlp_response.status_code} - {nlp_response.text}")
+                    pass
             else:
-                print(f"🧠 [DEBUG] Нет текстовых блоков для NLP анализа")
-                
+                # print(f"🧠 [DEBUG] Нет текстовых блоков для NLP анализа")
+                pass
         except Exception as e:
-            print(f"🧠 [DEBUG] Ошибка NLP анализа: {str(e)}")
+            # print(f"🧠 [DEBUG] Ошибка NLP анализа: {str(e)}")
+            pass
         
         # Объединяем результаты БЕЗ дедупликации - каждый сервис отвечает за свои данные
         all_found_items = rule_engine_items + nlp_items
@@ -390,7 +392,7 @@ async def anonymize_selected(file: UploadFile = File(...), selected_items: str =
     Селективная анонимизация документа на основе выбранных пользователем элементов
     """
     print(f"🔧 [ANONYMIZE] Запрос анонимизации файла: {file.filename}")
-    print(f"🔧 [ANONYMIZE] Получено selected_items: {selected_items}")
+    # print(f"🔧 [ANONYMIZE] Получено selected_items: {selected_items}")
     
     if not selected_items:
         print(f"❌ [ANONYMIZE] Нет selected_items")
@@ -412,8 +414,8 @@ async def anonymize_selected(file: UploadFile = File(...), selected_items: str =
         import json
         selected_items_list = json.loads(selected_items)
         
-        print(f"🔧 [ANONYMIZE] Парсинг JSON успешен: {len(selected_items_list)} элементов")
-        print(f"🔧 [ANONYMIZE] Первые 3 элемента: {selected_items_list[:3] if len(selected_items_list) > 3 else selected_items_list}")
+        # print(f"🔧 [ANONYMIZE] Парсинг JSON успешен: {len(selected_items_list)} элементов")
+        # print(f"🔧 [ANONYMIZE] Первые 3 элемента: {selected_items_list[:3] if len(selected_items_list) > 3 else selected_items_list}")
         
         # Инициализируем полный анонимизатор
         anonymizer = FullAnonymizer()

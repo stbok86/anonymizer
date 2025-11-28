@@ -37,34 +37,34 @@ class RuleEngineAdapter:
         # Загружаем паттерны ТОЛЬКО из файла
         try:
             if self.patterns_file and pd is not None:
-                print(f"🔍 [DEBUG] Pandas доступен, пытаемся загрузить файл: {self.patterns_file}")
+                # print(f"🔍 [DEBUG] Pandas доступен, пытаемся загрузить файл: {self.patterns_file}")
                 import os
                 
                 # Проверяем существование файла
                 if not os.path.exists(self.patterns_file):
                     print(f"❌ [ERROR] Файл паттернов не найден: {self.patterns_file}")
-                    print(f"🔍 [DEBUG] Проверяем относительный путь...")
+                    # print(f"🔍 [DEBUG] Проверяем относительный путь...")
                     # Пробуем найти файл относительно текущего модуля
                     current_dir = os.path.dirname(os.path.abspath(__file__))
                     relative_path = os.path.join(current_dir, "..", self.patterns_file)
                     absolute_path = os.path.abspath(relative_path)
-                    print(f"🔍 [DEBUG] Пробуем путь: {absolute_path}")
+                    # print(f"🔍 [DEBUG] Пробуем путь: {absolute_path}")
                     
                     if os.path.exists(absolute_path):
                         self.patterns_file = absolute_path
                         print(f"✅ [SUCCESS] Файл найден по пути: {self.patterns_file}")
                     else:
                         print(f"❌ [ERROR] Файл не найден и по относительному пути: {absolute_path}")
-                        print("🔍 [DEBUG] Используем только встроенные паттерны")
+                        # print("🔍 [DEBUG] Используем только встроенные паттерны")
                         return patterns
                 
                 # Определяем тип файла по расширению
                 file_ext = os.path.splitext(self.patterns_file.lower())[1]
-                print(f"🔍 [DEBUG] Расширение файла: {file_ext}")
+                # print(f"🔍 [DEBUG] Расширение файла: {file_ext}")
                 
                 # Особая обработка: если файл .xlsx не существует как Excel, пробуем как CSV
                 if file_ext == '.xlsx' and not self._is_valid_excel(self.patterns_file):
-                    print(f"🔍 [DEBUG] Файл {self.patterns_file} не является валидным Excel, пробуем как CSV...")
+                    # print(f"🔍 [DEBUG] Файл {self.patterns_file} не является валидным Excel, пробуем как CSV...")
                     try:
                         df = pd.read_csv(self.patterns_file)
                         print(f"✅ [SUCCESS] Загружены паттерны из файла {self.patterns_file} как CSV")
@@ -72,11 +72,11 @@ class RuleEngineAdapter:
                         print(f"❌ [ERROR] Не удалось прочитать как CSV: {csv_e}")
                         df = None
                 elif file_ext == '.csv':
-                    print(f"🔍 [DEBUG] Загружаем CSV файл...")
+                    # print(f"🔍 [DEBUG] Загружаем CSV файл...")
                     df = pd.read_csv(self.patterns_file)
                     print(f"✅ [SUCCESS] Загружены паттерны из CSV файла: {self.patterns_file}")
                 elif file_ext in ['.xlsx', '.xls']:
-                    print(f"🔍 [DEBUG] Загружаем Excel файл...")
+                    # print(f"🔍 [DEBUG] Загружаем Excel файл...")
                     df = pd.read_excel(self.patterns_file)
                     print(f"✅ [SUCCESS] Загружены паттерны из Excel файла: {self.patterns_file}")
                 else:
@@ -84,8 +84,8 @@ class RuleEngineAdapter:
                     df = None
                 
                 if df is not None:
-                    print(f"🔍 [DEBUG] DataFrame создан, строк: {len(df)}")
-                    print(f"🔍 [DEBUG] Столбцы DataFrame: {list(df.columns)}")
+                    # print(f"🔍 [DEBUG] DataFrame создан, строк: {len(df)}")
+                    # print(f"🔍 [DEBUG] Столбцы DataFrame: {list(df.columns)}")
                     
                     # Добавляем паттерны из файла к встроенным
                     patterns_added = 0
@@ -95,12 +95,12 @@ class RuleEngineAdapter:
                         description = row.get('description', '')
                         confidence = float(row.get('confidence', 0.5))
                         
-                        print(f"🔍 [DEBUG] Строка {i+1}: category={category}, pattern='{pattern[:50]}...', confidence={confidence}")
+                        # print(f"🔍 [DEBUG] Строка {i+1}: category={category}, pattern='{pattern[:50]}...', confidence={confidence}")
                         
                         if pattern:  # Добавляем только если паттерн не пустой
                             if category not in patterns:
                                 patterns[category] = []
-                                print(f"🔍 [DEBUG] Создана новая категория: {category}")
+                                # print(f"🔍 [DEBUG] Создана новая категория: {category}")
                             
                             patterns[category].append({
                                 'pattern': pattern,
@@ -110,9 +110,9 @@ class RuleEngineAdapter:
                             patterns_added += 1
                     
                     print(f"✅ [SUCCESS] Добавлено {patterns_added} паттернов из файла")
-                    print(f"🔍 [DEBUG] Итоговое количество категорий: {len(patterns)}")
-                    for category, patterns_list in patterns.items():
-                        print(f"🔍 [DEBUG]   {category}: {len(patterns_list)} правил")
+                    # print(f"🔍 [DEBUG] Итоговое количество категорий: {len(patterns)}")
+                    # for category, patterns_list in patterns.items():
+                    #     print(f"🔍 [DEBUG]   {category}: {len(patterns_list)} правил")
                         
             else:
                 if not self.patterns_file:
@@ -197,7 +197,6 @@ class RuleEngineAdapter:
                         matches.append({
                             'category': category,
                             'original_value': match.group(),
-                            'uuid': str(uuid.uuid4()),
                             'position': {
                                 'start': match.start(),
                                 'end': match.end()

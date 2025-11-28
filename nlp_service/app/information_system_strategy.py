@@ -181,7 +181,7 @@ class InformationSystemStrategy(DetectionStrategy):
                 end_char = match.end()
                 
                 # Создаем анонимизированный текст
-                anonymized_text = f"{anonymous_part} {str(uuid.uuid4())[:8].upper()}"
+                anonymized_text = f"{anonymous_part} [SYSTEM_ID]"
                 
                 detection = {
                     'category': 'information_system',
@@ -189,7 +189,7 @@ class InformationSystemStrategy(DetectionStrategy):
                     'confidence': 0.9,  # Высокая уверенность для точных аббревиатур
                     'position': {'start': start_char, 'end': end_char},
                     'method': 'complex_abbreviation',
-                    'uuid': str(uuid.uuid4()),
+                    'uuid': 'placeholder',  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
                     'system_type': 'information_system',
                     'core_part': anonymous_part,
                     'private_part': private_part,
@@ -230,8 +230,8 @@ class InformationSystemStrategy(DetectionStrategy):
                         break
                 
                 if not is_overlapping:
-                    # Создаем анонимизированный текст
-                    anonymized_text = f"{anonymous_part} {str(uuid.uuid4())}"
+                    # Создаем анонимизированный текст (будет обработан в FormatterApplier)
+                    anonymized_text = f"{anonymous_part} [SYSTEM_ID]"
                     
                     detection = {
                         'category': 'information_system',
@@ -239,7 +239,7 @@ class InformationSystemStrategy(DetectionStrategy):
                         'confidence': 0.9,  # Высокая уверенность для точных аббревиатур
                         'position': {'start': start_char, 'end': end_char},
                         'method': 'spaced_abbreviation',
-                        'uuid': str(uuid.uuid4()),
+                        'uuid': 'placeholder',  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
                         'system_type': 'information_system',
                         'core_part': anonymous_part,
                         'private_part': private_part,
@@ -342,8 +342,8 @@ class InformationSystemStrategy(DetectionStrategy):
                     # ИСПРАВЛЕНИЕ: Извлекаем точный текст с сохранением исходных пробелов
                     full_match = text[start_char:end_char]
                     
-                    # Создаем анонимизированный текст
-                    anonymized_text = f"{anonymous_part} {str(uuid.uuid4())}"
+                    # Создаем анонимизированный текст (будет обработан в FormatterApplier)
+                    anonymized_text = f"{anonymous_part} [SYSTEM_ID]"
                     
                     detection = {
                         'category': 'information_system',
@@ -351,7 +351,7 @@ class InformationSystemStrategy(DetectionStrategy):
                         'confidence': 0.95,  # Высокая уверенность для токен-базированного анализа
                         'position': {'start': start_char, 'end': end_char},
                         'method': 'spaced_abbreviation',
-                        'uuid': str(uuid.uuid4()),
+                        'uuid': 'placeholder',  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
                         'system_type': 'information_system',
                         'core_part': anonymous_part,
                         'private_part': private_part,
@@ -433,9 +433,9 @@ class InformationSystemStrategy(DetectionStrategy):
             'confidence': 0.85,
             'position': {'start': span.start_char, 'end': span.end_char},
             'method': 'simple_abbreviation',
-            'uuid': str(uuid.uuid4()),
+            'uuid': 'placeholder',  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
             'system_type': 'information_system',
-            'core_part': abbr_text,         # Вся аббревиатура - это анонимная часть
+            'core_part': abbr_text,         # Вся аббревиатуря - это анонимная часть
             'private_part': '',             # Нет приватной части
             'anonymized_text': abbr_text    # Остается как есть
         }
@@ -536,7 +536,7 @@ class InformationSystemStrategy(DetectionStrategy):
                     'confidence': 0.8,
                     'position': {'start': start_char, 'end': actual_end},
                     'method': 'information_system_regex',
-                    'uuid': str(uuid.uuid4())
+                    'uuid': 'placeholder'  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
                 }
                 
                 # Разделяем на части
@@ -615,8 +615,8 @@ class InformationSystemStrategy(DetectionStrategy):
         
         # Создаем анонимизированный текст
         if private_part and len(private_part.split()) >= 1:
-            # Если есть приватная часть, заменяем её на UUID
-            anonymized_text = f"{core_part} {str(uuid.uuid4())[:8].upper()}"
+            # Если есть приватная часть, заменяем её на плейсхолдер
+            anonymized_text = f"{core_part} [SYSTEM_ID]"
         else:
             # Если нет приватной части, оставляем как есть
             anonymized_text = core_part
@@ -662,7 +662,7 @@ class InformationSystemStrategy(DetectionStrategy):
         
         # Создаем анонимизированный текст
         if private_part and len(private_part.split()) >= 2:
-            anonymized_text = f"{core_part} {str(uuid.uuid4())[:8].upper()}"
+            anonymized_text = f"{core_part} [SYSTEM_ID]"
         else:
             anonymized_text = core_part
             private_part = ""
@@ -691,7 +691,7 @@ class InformationSystemStrategy(DetectionStrategy):
                 'end': span.end_char
             },
             'method': f'information_system_{method}',
-            'uuid': str(uuid.uuid4()),
+            'uuid': 'placeholder'  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
         }
         
         if partition_result:

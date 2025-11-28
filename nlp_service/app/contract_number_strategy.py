@@ -131,7 +131,7 @@ class ContractNumberStrategy(DetectionStrategy):
                         'end': match.end(1)
                     },
                     'method': f'contract_regex_{name}',
-                    'uuid': str(uuid.uuid4()),
+                    'uuid': 'placeholder',  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
                     'anonymized_text': self._anonymize_contract_number(contract_number),
                     'context': {
                         'full_match': match.group(0),
@@ -178,19 +178,16 @@ class ContractNumberStrategy(DetectionStrategy):
         if '/' in original_number:
             parts = original_number.split('/')
             if len(parts) == 2 and parts[1].endswith('-2023'):
-                # Формат: 13/ОК-2023
-                prefix = str(uuid.uuid4().hex[:2].upper())
-                return f"{prefix}/{parts[1]}"
+                # Формат: 13/ОК-2023 (будет обработан в FormatterApplier)
+                return f"[CONTRACT_ID]/{parts[1]}"
             elif len(parts) == 2:
-                # Формат: 13/2023
-                prefix = str(uuid.uuid4().hex[:2].upper())
-                return f"{prefix}/{parts[1]}"
+                # Формат: 13/2023 (будет обработан в FormatterApplier)
+                return f"[CONTRACT_ID]/{parts[1]}"
         elif '-' in original_number:
             parts = original_number.split('-')
             if len(parts) >= 2:
-                # Заменяем первую часть
-                prefix = str(uuid.uuid4().hex[:2].upper())
-                return f"{prefix}-{'-'.join(parts[1:])}"
+                # Заменяем первую часть (будет обработан в FormatterApplier)
+                return f"[CONTRACT_ID]-{'-'.join(parts[1:])}"
         
-        # Для простых номеров - полная замена
-        return str(uuid.uuid4().hex[:8].upper())
+        # Для простых номеров - полная замена (будет обработан а FormatterApplier)
+        return "[CONTRACT_ID]"

@@ -22,29 +22,6 @@ import streamlit as st
 # CSS для изменения текста кнопки "Browse files" на "Выбрать файл"
 st.markdown("""
 <style>
-div[data-testid="stFileUploader"] > section[data-testid="stFileUploaderDropzone"] > button {
-    /* Скрываем стандартную кнопку */
-}
-
-div[data-testid="stFileUploader"] > section[data-testid="stFileUploaderDropzone"] > button:after {
-    content: "Выбрать файл";
-    display: block;
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: #ff4b4b;
-    color: white;
-    border: none;
-    border-radius: 0.25rem;
-    font-size: 0.875rem;
-    font-weight: 400;
-    line-height: 1.6;
-    text-align: center;
-    padding: 0.375rem 0.75rem;
-}
-
 div[data-testid="stFileUploader"] > section[data-testid="stFileUploaderDropzone"] > button span {
     display: none;
 }
@@ -171,6 +148,16 @@ def step1_upload_document():
 
 def step2_review_findings():
     """Шаг 2: Предпросмотр найденных сущностей"""
+    st.markdown("""
+    <style>
+    .block-container { padding-top: 0.5rem !important; }
+    h1, .stTitle { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+    h2, .stHeader { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+    h3 { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+    .stMarkdown { margin-bottom: 0.2rem !important; }
+    .stExpander { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+    </style>
+    """, unsafe_allow_html=True)
     st.markdown("## Шаг 2: Предпросмотр данных")
     
     found_data = st.session_state.found_data
@@ -258,8 +245,6 @@ def step2_review_findings():
             'Блок': item.get('block_id', 'unknown'),
             'Значение': item.get('original_value', ''),
             'Связанный контекст': highlighted_context,
-            'UUID замена': item.get('uuid', ''),
-            'Структурированные данные': 'Да' if is_structured else 'Нет',
             'Уверенность': f"{item.get('confidence', 1.0):.2f}",
             'Комментарий': item.get('comment', ''),
             'Заменить': item.get('approved', True)
@@ -267,34 +252,31 @@ def step2_review_findings():
     
     # Интерактивная таблица
     if table_data:
+        # Переименуем столбец 'Значение' в 'Заменяемое значение' для отображения
+        df = pd.DataFrame(table_data)
+        df = df.rename(columns={'Значение': 'Заменяемое значение'})
         edited_df = st.data_editor(
-            pd.DataFrame(table_data),
+            df,
             column_config={
-                'ID': st.column_config.NumberColumn('№', disabled=True),
-                'Источник': st.column_config.TextColumn('Источник', disabled=True),
+                'ID': st.column_config.NumberColumn('№', disabled=True, width="extraSmall"),
+                'Источник': st.column_config.TextColumn('Источник', disabled=True, width="small"),
                 'Метод': st.column_config.TextColumn(
                     'Метод обнаружения', 
                     disabled=True,
                     help="Какой алгоритм определил эту сущность"
                 ),
-                'Тип': st.column_config.TextColumn('Тип', disabled=True),
+                'Тип': st.column_config.TextColumn('Тип', disabled=True, width="small"),
                 'Блок': st.column_config.TextColumn(
                     'ID блока', 
                     disabled=True,
                     width="small",
                     help="Идентификатор блока документа"
                 ),
-                'Значение': st.column_config.TextColumn('Значение', disabled=True),
+                'Заменяемое значение': st.column_config.TextColumn('Заменяемое значение', disabled=True, width="large"),
                 'Связанный контекст': st.column_config.TextColumn(
                     'Связанный контекст', 
                     disabled=True,
                     help="Полный текст блока с выделенным найденным значением"
-                ),
-                'UUID замена': st.column_config.TextColumn('UUID замена', disabled=True),
-                'Структурированные данные': st.column_config.TextColumn(
-                    'Структурированные данные', 
-                    disabled=True,
-                    help="Да = Rule Engine, Нет = NLP Service"
                 ),
                 'Уверенность': st.column_config.TextColumn(
                     'Уверенность', 
@@ -408,6 +390,16 @@ def step2_review_findings():
 
 def step3_download_results():
     """Шаг 3: Скачивание результатов"""
+    st.markdown("""
+    <style>
+    .block-container { padding-top: 0.5rem !important; }
+    h1, .stTitle { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+    h2, .stHeader { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+    h3 { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+    .stMarkdown { margin-bottom: 0.2rem !important; }
+    .stExpander { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+    </style>
+    """, unsafe_allow_html=True)
     st.markdown("## 📥 Шаг 3: Результаты анонимизации")
     
     st.success("✅ Документ успешно анонимизирован!")
@@ -1038,7 +1030,17 @@ def main():
     current_step = st.session_state.current_step
     
     if current_step == 1:
-        # Заголовок и описание только на первом шаге
+        # Уменьшаем вертикальные отступы для компактности первой страницы
+        st.markdown("""
+        <style>
+        .block-container { padding-top: 0.5rem !important; }
+        h1, .stTitle { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+        h2, .stHeader { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+        h3 { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+        .stMarkdown { margin-bottom: 0.2rem !important; }
+        .stExpander { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
+        </style>
+        """, unsafe_allow_html=True)
         st.title("Анонимайзер docx-документов")
         st.markdown("**Анонимизация DOCX документов с заменой чувствительных данных на UUID и полным сохранением форматирования**")
         # Показываем описание и инструкции только на первом шаге
