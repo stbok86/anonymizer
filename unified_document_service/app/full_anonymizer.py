@@ -105,66 +105,35 @@ class FullAnonymizer:
                             }
                             rule_engine_matches.append(match)
                 
-                # 3.2: Поиск через NLP Service (новая централизованная система)
+                # 3.2: Поиск через NLP Service (поблочная обработка)
                 nlp_matches = []
                 
-                # Извлекаем весь текст документа для анализа
-                full_text = ""
-                block_offsets = []  # Для маппинга позиций обратно на блоки
+                print(f"🤖 Вызываем NLP Service для анализа {len(blocks)} блоков")
                 
+                # Обрабатываем каждый блок отдельно через NLP Service
                 for block in blocks:
                     block_text = block.get('text', block.get('content', ''))
-                    if block_text.strip():
-                        block_start = len(full_text)
-                        full_text += block_text + "\n"
-                        block_end = len(full_text) - 1
-                        
-                        block_offsets.append({
+                    if not block_text.strip():
+                        continue
+                    
+                    # Вызываем NLP Service для ОДНОГО блока
+                    block_detections = self._call_nlp_service(block_text)
+                    
+                    # Добавляем детекции с привязкой к блоку
+                    for detection in block_detections:
+                        match = {
                             'block_id': block['block_id'],
-                            'start': block_start,
-                            'end': block_end,
+                            'original_value': detection['original_value'],
+                            'position': detection['position'],  # Уже относительно блока
                             'element': block.get('element'),
-                            'original_text': block_text
-                        })
+                            'category': detection['category'],
+                            'confidence': detection['confidence'],
+                            'source': 'nlp_service',
+                            'method': detection['method']
+                        }
+                        nlp_matches.append(match)
                 
-                # Вызываем NLP Service
-                if full_text.strip():
-                    print(f"🤖 Вызываем NLP Service для анализа текста ({len(full_text)} символов)")
-                    nlp_detections = self._call_nlp_service(full_text)
-                    
-                    print(f"🎯 NLP Service нашел {len(nlp_detections)} детекций")
-                    
-                    # Маппим детекции NLP Service обратно на блоки
-                    for detection in nlp_detections:
-                        detection_start = detection['position']['start']
-                        detection_end = detection['position']['end']
-                        
-                        # Находим блок, которому принадлежит эта детекция
-                        for block_info in block_offsets:
-                            if (detection_start >= block_info['start'] and 
-                                detection_end <= block_info['end']):
-                                
-                                # Пересчитываем позицию относительно блока
-                                relative_start = detection_start - block_info['start']
-                                relative_end = detection_end - block_info['start']
-                                
-                                match = {
-                                    'block_id': block_info['block_id'],
-                                    'original_value': detection['original_value'],
-                                    'position': {
-                                        'start': relative_start,
-                                        'end': relative_end,
-                                        'global_start': detection_start,
-                                        'global_end': detection_end
-                                    },
-                                    'element': block_info['element'],
-                                    'category': detection['category'],
-                                    'confidence': detection['confidence'],
-                                    'source': 'nlp_service',
-                                    'method': detection['method']
-                                }
-                                nlp_matches.append(match)
-                                break
+                print(f"🎯 NLP Service нашел {len(nlp_matches)} детекций во всех блоках")
                 
                 # 3.3: Комбинируем результаты (приоритет NLP Service)
                 print(f"📊 Найдено совпадений: Rule Engine={len(rule_engine_matches)}, NLP Service={len(nlp_matches)}")
@@ -187,33 +156,18 @@ class FullAnonymizer:
                 print(f"✅ Итого уникальных совпадений: {len(all_matches)}")
                 
                 # --- ДОБАВЛЯЕМ АНАЛИЗ И АНОНИМИЗАЦИЮ МЕТАДАННЫХ ---
-                from docx_metadata_handler import DocxMetadataHandler
-                metadata_handler = DocxMetadataHandler(input_path)
-                metadata = metadata_handler.extract_metadata()
-                # Собираем все значения метаданных в список для анализа
+                # ВРЕМЕННО ОТКЛЮЧЕНО из-за отсутствия метода find_patterns_in_text
                 metadata_matches = []
-                for section_name, section in metadata.items():
-                    if isinstance(section, dict):
-                        for value in section.values():
-                            if value:
-                                patterns = self.rule_engine.find_patterns_in_text(value)
-                                for pattern in patterns:
-                                    already_found = any(m['original_value'] == value for m in all_matches)
-                                    if not already_found:
-                                        metadata_matches.append({
-                                            'block_id': f'metadata_{pattern["category"]}',
-                                            'original_value': value,
-                                            'position': {'start': 0, 'end': len(value)},
-                                            'element': None,
-                                            'category': pattern['category'],
-                                            'confidence': pattern.get('confidence', 1.0),
-                                            'source': 'metadata',
-                                            'method': 'regex',
-                                            'metadata_section': section_name  # <--- Ключевой момент!
-                                        })
-                if metadata_matches:
-                    print(f"🔍 [METADATA] Найдено чувствительных значений в метаданных: {len(metadata_matches)}")
-                all_matches.extend(metadata_matches)
+                # from docx_metadata_handler import DocxMetadataHandler
+                # metadata_handler = DocxMetadataHandler(input_path)
+                # metadata = metadata_handler.extract_metadata()
+                # # Собираем все значения метаданных в список для анализа
+                # for section_name, section in metadata.items():
+                #     if isinstance(section, dict):
+                #         for value in section.values():
+                #             if value:
+                #                 # TODO: Нужно реализовать поиск паттернов через NLP Service
+                #                 pass
                 # --- КОНЕЦ ДОБАВЛЕНИЯ АНАЛИЗА МЕТАДАННЫХ ---
                 
             else:
@@ -223,17 +177,90 @@ class FullAnonymizer:
             
             # ЭТАП 4: Применение замен с сохранением форматирования
             replacement_stats = self.formatter.apply_replacements_to_document(doc, all_matches)
+            
+            # 🎯 ВАЖНО: Получаем нормализованные замены с UUID для отчетов
+            normalized_matches = replacement_stats.get('normalized_replacements', all_matches)
+            
             # ЭТАП 5: Сохранение анонимизированного документа (текст)
             doc.save(output_path)
-            # ЭТАП 6: Анонимизация метаданных (если были найдены)
-            if metadata_matches:
-                # Генерируем UUID для найденных значений
-                for m in metadata_matches:
-                    from uuid_mapper import UUIDMapper
-                    uuid_mapper = self.formatter.uuid_mapper if hasattr(self.formatter, 'uuid_mapper') else UUIDMapper()
-                    m['uuid'] = uuid_mapper.get_uuid_for_text(m['original_value'], m['category'])
-                # Анонимизируем метаданные в docx
-                metadata_handler.anonymize_metadata_in_docx(output_path, output_path, metadata_matches)
+            
+            # ЭТАП 6: Анонимизация метаданных в docProps/core.xml
+            print(f"\n🔧 [METADATA] Начинаем анонимизацию метаданных...")
+            try:
+                from docx_metadata_handler import DocxMetadataHandler
+                from uuid_mapper import UUIDMapper
+                
+                uuid_mapper = self.formatter.uuid_mapper if hasattr(self.formatter, 'uuid_mapper') else UUIDMapper()
+                metadata_handler = DocxMetadataHandler(output_path)
+                
+                # Сначала извлекаем метаданные
+                metadata_handler.extract_metadata()
+                
+                # Ищем совпадения в метаданных используя normalized_matches (с UUID)
+                sensitive_metadata = metadata_handler.find_sensitive_metadata(normalized_matches)
+                
+                if sensitive_metadata:
+                    print(f"🔧 [METADATA] Найдено чувствительных данных в метаданных: {len(sensitive_metadata)}")
+                    # Генерируем UUID для метаданных если их нет
+                    for i, m in enumerate(sensitive_metadata):
+                        existing_uuid = m.get('uuid')
+                        if not existing_uuid:
+                            print(f"⚠️ [METADATA] UUID отсутствует для метаданных #{i}: '{m.get('original_value', 'N/A')[:50]}', partial_match: '{m.get('partial_match', 'N/A')}'")
+                            m['uuid'] = uuid_mapper.get_uuid_for_text(m['original_value'], m.get('category', 'unknown'))
+                        else:
+                            print(f"✅ [METADATA] UUID уже есть для метаданных #{i}: '{m.get('original_value', 'N/A')[:30]}...' → '{existing_uuid}'")
+                    
+                    # Анонимизируем метаданные в docx
+                    metadata_handler.anonymize_metadata_in_docx(output_path, output_path, sensitive_metadata)
+                    print(f"🔧 [METADATA] ✅ Метаданные анонимизированы")
+                    
+                    # 🎯 ВАЖНО: Добавляем метаданные в список замен для отчета
+                    # Но сначала удаляем дубликаты из документа
+                    print(f"🔧 [DEDUP] Удаление дубликатов перед добавлением метаданных...")
+                    print(f"🔧 [DEDUP] До: {len(normalized_matches)} записей в normalized_matches")
+                    
+                    # Собираем ВСЕ значения из метаданных (и partial_match, и точные совпадения)
+                    metadata_values = set()
+                    for m in sensitive_metadata:
+                        # Для частичных совпадений берем partial_match
+                        partial = m.get('partial_match')
+                        if partial:
+                            metadata_values.add(partial)
+                        # Для точных совпадений берем original_value
+                        else:
+                            metadata_values.add(m.get('original_value', ''))
+                    
+                    print(f"🔧 [DEDUP] Найдено {len(metadata_values)} уникальных значений в метаданных")
+                    
+                    # Удаляем из normalized_matches записи, у которых original_value есть в метаданных
+                    # И source НЕ metadata_* (т.е. записи из документа)
+                    filtered_matches = []
+                    removed_count = 0
+                    for match in normalized_matches:
+                        orig_val = match.get('original_value', '')
+                        source = match.get('source', '')
+                        
+                        # Если это запись из документа И её значение есть в метаданных — удаляем
+                        if not source.startswith('metadata_') and orig_val in metadata_values:
+                            print(f"🔧 [DEDUP] ❌ Удаляем дубликат: '{orig_val}' (source: {source})")
+                            removed_count += 1
+                        else:
+                            filtered_matches.append(match)
+                    
+                    normalized_matches = filtered_matches
+                    print(f"🔧 [DEDUP] После удаления дубликатов: {len(normalized_matches)} записей (удалено {removed_count})")
+                    
+                    # Теперь добавляем метаданные
+                    normalized_matches.extend(sensitive_metadata)
+                    print(f"🔧 [DEDUP] После добавления метаданных: {len(normalized_matches)} записей")
+                else:
+                    print(f"🔧 [METADATA] ℹ️ Чувствительных данных в метаданных не найдено")
+                    
+            except Exception as e:
+                print(f"🔧 [METADATA] ⚠️ Ошибка при анонимизации метаданных: {str(e)}")
+                import traceback
+                traceback.print_exc()
+            
             # ЭТАП 7: Генерация отчетов
             results = {
                 'status': 'success',
@@ -245,12 +272,12 @@ class FullAnonymizer:
             }
             # Генерация Excel отчета
             if excel_report_path:
-                excel_data = self._generate_excel_report(processed_blocks, all_matches)
+                excel_generated = self._generate_excel_report(processed_blocks, normalized_matches, excel_report_path)
                 results['excel_report_path'] = excel_report_path
-                results['excel_report_generated'] = True
+                results['excel_report_generated'] = excel_generated
             # Генерация JSON журнала
             if json_ledger_path:
-                ledger_data = self._generate_json_ledger(all_matches, replacement_stats)
+                ledger_data = self._generate_json_ledger(normalized_matches, replacement_stats)
                 with open(json_ledger_path, 'w', encoding='utf-8') as f:
                     json.dump(ledger_data, f, ensure_ascii=False, indent=2)
                 results['json_ledger_path'] = json_ledger_path
@@ -384,45 +411,102 @@ class FullAnonymizer:
                 'error_type': type(e).__name__
             }
 
-    def _generate_excel_report(self, processed_blocks: List[Dict], matches: List[Dict]) -> str:
-        """Генерация Excel отчета о найденных чувствительных данных"""
+    def _generate_excel_report(self, processed_blocks: List[Dict], matches: List[Dict], excel_path: str) -> bool:
+        """
+        Генерация Excel отчета с детерминистичными UUID
+        
+        Args:
+            processed_blocks: Обработанные блоки документа
+            matches: Список найденных совпадений
+            excel_path: Путь для сохранения Excel файла
+            
+        Returns:
+            True если успешно, False при ошибке
+        """
         try:
             report_data = []
-            for match in matches:
+            
+            print(f"📝 [EXCEL_REPORT] Генерация отчета для {len(matches)} замен")
+            print(f"📝 [EXCEL_REPORT] Первые 3 замены:")
+            for i, match in enumerate(matches[:3], 1):
+                print(f"  {i}. original_value: '{match.get('original_value', 'N/A')[:50]}'")
+                print(f"     uuid: '{match.get('uuid', 'N/A')}'")
+                print(f"     category: '{match.get('category', 'N/A')}'")
+            
+            for i, match in enumerate(matches, 1):
+                original_value = match.get('original_value', '')
+                category = match.get('category', 'unknown')
+                
+                # Используем UUID который уже был сгенерирован в formatter_applier
+                # Если UUID нет в match, генерируем новый (резервный вариант)
+                uuid_for_replacement = match.get('uuid')
+                if not uuid_for_replacement:
+                    print(f"⚠️ [EXCEL_REPORT] UUID отсутствует для '{original_value[:50]}', генерируем новый")
+                    uuid_for_replacement = self.formatter.uuid_mapper.get_uuid_for_text(original_value, category)
+                
+                # Определяем расположение замены
+                # Если source начинается с metadata_ — это метаданные
+                source = match.get('source', '')
+                location = 'Метаданные' if source.startswith('metadata_') else 'Документ'
+                
                 report_data.append({
-                    'Блок ID': match.get('block_id', ''),
-                    'Категория': match.get('category', ''),
-                    'Оригинальное значение': match.get('original_value', ''),
-                    'UUID замены': 'генерируется при замене',
-                    'Позиция начала': match.get('position', {}).get('start', ''),
-                    'Позиция конца': match.get('position', {}).get('end', ''),
-                    'Уверенность': match.get('confidence', '')
+                    '№': i,
+                    'Исходные данные': original_value,
+                    'Замена (идентификатор)': uuid_for_replacement,
+                    'Расположение': location
                 })
             
+            # Создаем DataFrame с правильными колонками
             df = pd.DataFrame(report_data)
-            # Временно возвращаем данные в виде строки, т.к. путь для Excel пока не реализован
-            return df.to_string()
+            
+            # Сохраняем в Excel
+            with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='Замены', index=False)
+                
+                # Настраиваем форматирование колонок
+                worksheet = writer.sheets['Замены']
+                worksheet.column_dimensions['A'].width = 5
+                worksheet.column_dimensions['B'].width = 40
+                worksheet.column_dimensions['C'].width = 45
+                worksheet.column_dimensions['D'].width = 15  # Колонка "Расположение"
+            
+            print(f"✅ Excel отчет сохранен: {excel_path} ({len(report_data)} записей)")
+            return True
             
         except Exception as e:
-            return f"Ошибка генерации Excel отчета: {str(e)}"
+            print(f"❌ Ошибка генерации Excel отчета: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def _generate_json_ledger(self, matches: List[Dict], stats: Dict) -> Dict:
-        """Генерация JSON журнала замен"""
+        """Генерация JSON журнала замен с детерминистичными UUID"""
+        replacements_list = []
+        
+        for match in matches:
+            original_value = match.get('original_value', '')
+            category = match.get('category', 'unknown')
+            
+            # Используем UUID который уже был сгенерирован в formatter_applier
+            # Если UUID нет в match, генерируем новый (резервный вариант)
+            uuid_for_replacement = match.get('uuid')
+            if not uuid_for_replacement:
+                uuid_for_replacement = self.formatter.uuid_mapper.get_uuid_for_text(original_value, category)
+            
+            replacements_list.append({
+                'uuid': uuid_for_replacement,
+                'category': category,
+                'original_value': original_value,
+                'block_id': match.get('block_id', ''),
+                'position': match.get('position', {}),
+                'confidence': match.get('confidence', 1.0)
+            })
+        
         return {
             'timestamp': pd.Timestamp.now().isoformat(),
             'total_matches': len(matches),
             'replacement_statistics': stats,
-            'replacements': [
-                {
-                    'uuid': match.get('uuid', '[UUID_WILL_BE_GENERATED]'),
-                    'category': match.get('category', ''),
-                    'original_value': match.get('original_value', ''),
-                    'block_id': match.get('block_id', ''),
-                    'position': match.get('position', {}),
-                    'confidence': match.get('confidence', 1.0)
-                }
-                for match in matches
-            ]
+            'replacements': replacements_list
         }
     
     def _positions_overlap(self, pos1: Dict, pos2: Dict, threshold: float = 0.5) -> bool:

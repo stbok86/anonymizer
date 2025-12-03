@@ -29,7 +29,7 @@
     "regex_settings": {
       "person_name_flags": ["UNICODE"],
       "other_categories_flags": ["IGNORECASE", "UNICODE"],
-      "case_sensitive_categories": ["person_name"]
+      "case_sensitive_categories": ["person_name", "information_system"]
     },
     
     "processing_settings": {
@@ -39,7 +39,7 @@
     },
     
     "file_paths": {
-      "patterns_file": "patterns/nlp_patterns.xlsx",
+      "patterns_file": "patterns/nlp_patterns.json",
       "patterns_file_relative_to": "nlp_service_app_dir"
     },
     
@@ -54,7 +54,7 @@
       "spacy_to_internal": {
         "PER": "person_name",
         "PERSON": "person_name",
-        "ORG": "government_org", 
+        "ORG": "organization", 
         "LOC": "location",
         "GPE": "location"
       }
@@ -192,7 +192,7 @@
         "priority_order": [1],
         "strategy": "information_system",
         "fallback_enabled": true,
-        "max_results": 10,
+        "max_results": 100,
         "method_settings": {
           "spacy_ner": {
             "min_confidence": 0.7,

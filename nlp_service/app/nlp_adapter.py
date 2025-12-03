@@ -32,6 +32,26 @@ except ImportError:
 
 
 class NLPAdapter:
+    def _is_valid_person_name_regex(self, match_text: str) -> bool:
+        """Проверяет, что совпадение по regex действительно похоже на ФИО с помощью морфологии"""
+        if not self.morph:
+            return True  # Если морфология не инициализирована, не фильтруем
+        words = match_text.split()
+        if len(words) != 3:
+            return False
+        noun_count = 0
+        animate_count = 0
+        for word in words:
+            parses = self.morph.parse(word)
+            if not parses:
+                continue
+            best = parses[0]
+            if 'NOUN' in best.tag:
+                noun_count += 1
+                if 'anim' in best.tag:
+                    animate_count += 1
+        # Требуем, чтобы все три слова были существительными и хотя бы два — одушевлённые
+        return noun_count == 3 and animate_count >= 2
     """
     Адаптер для обработки неструктурированных именованных сущностей
     """
@@ -118,34 +138,29 @@ class NLPAdapter:
     
     def _load_patterns(self, patterns_file: str):
         """
-        Загружает паттерны из Excel файла
-        
+        Загружает паттерны из JSON-файла
         Args:
-            patterns_file: Путь к Excel файлу с паттернами
+            patterns_file: Путь к JSON-файлу с паттернами
         """
         if not os.path.exists(patterns_file):
             raise FileNotFoundError(f"Файл паттернов не найден: {patterns_file}")
-        
         try:
-            df = pd.read_excel(patterns_file)
-            
-            for _, row in df.iterrows():
+            import json
+            with open(patterns_file, encoding="utf-8") as f:
+                data = json.load(f)
+            patterns = data["patterns"]
+            for row in patterns:
                 category = row['category']
                 pattern = row['pattern']
-                pattern_type = row['pattern_type']
+                pattern_type = row.get('type') or row.get('pattern_type')
                 confidence = float(row.get('confidence', self.config.get_default_pattern_confidence()))
                 context_required = bool(row.get('context_required', True))
                 description = row.get('description', '')
-                
-                # Пропускаем записи с пустым паттерном (NaN)
-                if pd.isna(pattern) and pattern_type == 'regex':
+                if not pattern and pattern_type == 'regex':
                     continue
-                
-                # Группируем по категориям
                 if category not in self.patterns:
                     self.patterns[category] = []
                     self.pattern_configs[category] = []
-                
                 self.patterns[category].append(pattern)
                 self.pattern_configs[category].append({
                     'pattern': pattern,
@@ -154,10 +169,8 @@ class NLPAdapter:
                     'context_required': context_required,
                     'description': description
                 })
-            
             if self.config.should_log_pattern_loading():
-                print(f"✅ Загружено {len(df)} NLP паттернов из {patterns_file}")
-            
+                print(f"✅ Загружено {len(patterns)} NLP паттернов из {patterns_file}")
         except Exception as e:
             print(f"❌ Ошибка загрузки паттернов: {e}")
             raise
@@ -188,114 +201,14 @@ class NLPAdapter:
     def _setup_custom_phrases(self):
         """Настраивает PhraseMatcher для специфических терминов"""
         
-        # Должности и роли (расширенный список)
-        positions = [
-            # Руководящие должности
-            "генеральный директор", "исполнительный директор", "директор",
-            "заместитель директора", "зам директора", "зам. директора",
-            "начальник", "руководитель", "заведующий", "управляющий",
-            
-            # Менеджмент
-            "менеджер", "старший менеджер", "ведущий менеджер",
-            "менеджер по продажам", "менеджер по персоналу", "hr менеджер",
-            "проект менеджер", "продакт менеджер",
-            
-            # Специалисты
-            "специалист", "ведущий специалист", "старший специалист",
-            "главный специалист", "консультант", "эксперт", "аналитик",
-            
-            # IT должности
-            "программист", "разработчик", "системный администратор",
-            "сисадмин", "devops", "тестировщик", "аналитик данных",
-            "архитектор", "техлид", "team lead",
-            
-            # Финансы и учет
-            "бухгалтер", "главный бухгалтер", "экономист", "финансист",
-            "казначей", "аудитор", "контролер",
-            
-            # Юридические должности
-            "юрист", "корпоративный юрист", "правовед", "юрисконсульт",
-            
-            # Кадры и HR
-            "кадровик", "hr", "рекрутер", "специалист по кадрам",
-            
-            # Производство
-            "инженер", "главный инженер", "технолог", "мастер",
-            "начальник смены", "супервайзер", "оператор",
-            
-            # Прочее
-            "секретарь", "помощник", "ассистент", "координатор",
-            "администратор", "делопроизводитель"
-        ]
-        
-        # Типы организаций
-        organization_types = [
-            "общество с ограниченной ответственностью", "ооо",
-            "акционерное общество", "ао", "пао", "зао",
-            "индивидуальный предприниматель", "ип",
-            "государственное унитарное предприятие", "гуп",
-            "муниципальное унитарное предприятие", "муп",
-            "некоммерческая организация", "нко",
-            "автономная некоммерческая организация", "ано",
-            "учреждение", "бюджетное учреждение", "казенное учреждение"
-        ]
-        
-        # Подразделения
-        departments = [
-            "отдел", "управление", "департамент", "служба", "сектор",
-            "группа", "команда", "подразделение", "филиал", "представительство",
-            "отдел кадров", "бухгалтерия", "финансовый отдел",
-            "it отдел", "отдел продаж", "маркетинг", "pr отдел"
-        ]
-        
-        # Финансовые термины
-        financial_terms = [
-            "заработная плата", "зарплата", "оклад", "доход", "заработок",
-            "выплата", "премия", "бонус", "надбавка", "компенсация",
-            "стипендия", "пенсия", "пособие", "субсидия"
-        ]
-        
-        # Медицинские термины
-        medical_terms = [
-            "диагноз", "заболевание", "болезнь", "лечение", "терапия",
-            "операция", "процедура", "анализ", "обследование",
-            "медицинская карта", "история болезни", "рецепт"
-        ]
-        
-        # Конфиденциальные термины
-        confidential_terms = [
-            "коммерческая тайна", "конфиденциально", "секретно",
-            "ноу-хау", "служебная информация", "внутренняя информация",
-            "персональные данные", "чувствительная информация"
-        ]
-        
-        # Государственные организации - загружаем из расширенного словаря
-        government_orgs = self._load_government_organizations()
-        
-        # Добавляем фразы в PhraseMatcher
-        phrase_categories = {
-            'position': positions,
-            'organization': organization_types,
-            'department': departments,
-            'salary': financial_terms,
-            'health_info': medical_terms,
-            'trade_secret': confidential_terms,
-            'government_org': government_orgs  # Новая категория для госорганов
-        }
-        
+        # Все списки фраз теперь берём из JSON/настроек
+        phrase_categories = self.config.get_phrase_categories_from_json()
         for category, phrases in phrase_categories.items():
             if phrases:
-                # Создаем документы для фраз
                 phrase_docs = [self.nlp(phrase) for phrase in phrases]
-                # Добавляем в matcher
                 self.phrase_matcher.add(f"{category}_phrases", phrase_docs)
-                
-                # Сохраняем для справки
                 self.custom_phrases[category] = phrases
-        
-        print(f"✅ Настроено {len(phrase_categories)} категорий кастомных фраз")
-        
-        # Создаем умные phrase матчеры для категорий с большими словарями
+        print(f"✅ Настроено {len(phrase_categories)} категорий кастомных фраз (из JSON)")
         self._setup_smart_phrase_matchers()
     
     def _setup_smart_phrase_matchers(self):
@@ -359,15 +272,22 @@ class NLPAdapter:
         ]
         self.matcher.add("full_name", [fio_pattern])
         
-        # Паттерн для сокращенных имен: PROPN "." PROPN "." (И.О.)
-        initials_pattern = [
-            {"POS": "PROPN", "LENGTH": 1},
-            {"TEXT": "."},
-            {"POS": "PROPN", "LENGTH": 1},
-            {"TEXT": "."},
-            {"POS": "PROPN", "IS_TITLE": True}
+        # ИСПРАВЛЕННЫЕ паттерны для инициалов (И. О. Фамилия)
+        # Вариант 1: Токены типа "А." (POS может быть PROPN или PUNCT)
+        initials_pattern_v1 = [
+            {"TEXT": {"REGEX": r"^[А-ЯЁ]\.$"}},  # Первый инициал с точкой
+            {"TEXT": {"REGEX": r"^[А-ЯЁ]\.$"}},  # Второй инициал с точкой
+            {"POS": "PROPN", "LENGTH": {">": 2}}  # Фамилия (длиннее 2 символов)
         ]
-        self.matcher.add("initials_lastname", [initials_pattern])
+        self.matcher.add("initials_lastname_v1", [initials_pattern_v1])
+        
+        # Вариант 2: Фамилия + инициалы (Фамилия И. О.)
+        lastname_initials_pattern = [
+            {"POS": "PROPN", "LENGTH": {">": 2}},  # Фамилия
+            {"TEXT": {"REGEX": r"^[А-ЯЁ]\.$"}},  # Первый инициал
+            {"TEXT": {"REGEX": r"^[А-ЯЁ]\.$"}}   # Второй инициал
+        ]
+        self.matcher.add("lastname_initials", [lastname_initials_pattern])
         
         # Паттерн для организаций с юр.формой
         org_pattern = [
@@ -404,10 +324,9 @@ class NLPAdapter:
         # Сохраняем оригинальный текст для mapping позиций
         original_text = text
         
-        # ДЛЯ ИНФОРМАЦИОННЫХ СИСТЕМ НЕ ИСПОЛЬЗУЕМ НОРМАЛИЗАЦИЮ
-        # Нормализация текста может нарушить позиции для замены
-        # Используем оригинальный текст напрямую
-        processing_text = original_text
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Нормализуем неразрывные пробелы для правильной токенизации
+        # Заменяем \xa0 (неразрывный пробел) на обычный пробел
+        processing_text = original_text.replace('\xa0', ' ')
         
         # Обрабатываем текст через spaCy один раз для всех методов
         doc = self.nlp(processing_text)
@@ -751,22 +670,24 @@ class NLPAdapter:
         for pattern_config in category_pattern_configs:
             pattern = pattern_config['pattern']
             pattern_type = pattern_config['pattern_type']
-            
             # Пропускаем non-regex паттерны или пустые паттерны
             if pattern_type != 'regex' or pd.isna(pattern):
                 continue
-            
             flags = self.config.get_regex_flags_for_category(category)
-            
             try:
                 matches = re.finditer(pattern, text, flags)
-                
                 for match in matches:
+                    match_text = match.group()
+                    # Для person_name применяем морфологическую фильтрацию ТОЛЬКО для полных ФИО (3 слова)
+                    if category == 'person_name' and len(match_text.split()) == 3 and '.' not in match_text:
+                        if not self._is_valid_person_name_regex(match_text):
+                            print(f"[DEBUG][person_name][morph_filter][SKIP] '{match_text}' отфильтровано как не-ФИО")
+                            continue
                     if self._validate_context(text, match, category):
                         detection = self.detection_factory.create_detection(
                             method='regex',
                             category=category,
-                            original_value=match.group(),
+                            original_value=match_text,
                             position=(match.start(), match.end()),
                             additional_info={
                                 'pattern_type': pattern_type,
@@ -775,11 +696,9 @@ class NLPAdapter:
                             }
                         )
                         detections.append(detection)
-                        
             except re.error as e:
                 if self.config.should_log_pattern_loading():
                     print(f"Regex error in pattern for {category}: {e}")
-        
         return detections
     
     def _extract_morphological_names_for_category(self, doc: Doc, category: str) -> List[Dict[str, Any]]:

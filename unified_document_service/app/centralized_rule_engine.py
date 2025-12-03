@@ -83,9 +83,14 @@ class Detection:
     validation_passed: bool = True
     
     def __post_init__(self):
-        """Генерация UUID если не задан"""
-        if self.uuid is None:
-            self.uuid = str(uuid.uuid4())
+        """
+        UUID НЕ генерируется автоматически!
+        UUID должен быть детерминистичным и генерироваться через UUIDMapper
+        на основе original_value и category для обеспечения идемпотентности
+        """
+        # if self.uuid is None:
+        #     self.uuid = str(uuid.uuid4())  # ❌ УДАЛЕНО: случайная генерация
+        pass
 
 
 class DetectionEngine(ABC):

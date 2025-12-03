@@ -12,16 +12,14 @@ from spacy.tokens import Doc
 class TextNormalizer:
     """Класс для нормализации текста перед PhraseMatcher"""
     
-    def __init__(self):
-        # Паттерны для нормализации
-        self.normalization_patterns = [
-            # Убираем переносы строк между словами
-            (r'\n+', ' '),
-            # Убираем лишние пробелы  
-            (r'\s+', ' '),
-            # Убираем пробелы в начале и конце
-            (r'^\s+|\s+$', ''),
-        ]
+    def __init__(self, normalization_patterns=None):
+        # Паттерны для нормализации теперь берём только из nlp_patterns.json
+        if normalization_patterns is not None:
+            self.normalization_patterns = normalization_patterns
+        else:
+            from nlp_config import NLPConfig
+            config = NLPConfig()
+            self.normalization_patterns = config.get_normalization_patterns()
     
     def normalize_text(self, text: str) -> str:
         """

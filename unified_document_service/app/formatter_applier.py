@@ -90,7 +90,7 @@ class FormatterApplier:
         
         # Группируем замены по блокам для эффективной обработки
         replacements_by_block = {}
-        for replacement in replacements:
+        for replacement in normalized_replacements:  # Используем нормализованные с UUID
             block_id = replacement.get('block_id')
             if block_id not in replacements_by_block:
                 replacements_by_block[block_id] = []
@@ -156,6 +156,16 @@ class FormatterApplier:
         stats['replacement_details'].extend(header_footer_stats['replacement_details'])
         
         print(f"📝 [FORMATTER_APPLIER] Дополнительная обработка завершена. Замен в headers/footers: {header_footer_stats['total_replacements']}")
+        
+        # 🎯 ВАЖНО: Сохраняем нормализованные замены для использования в отчетах
+        # Убираем element для возможности JSON сериализации
+        serializable_normalized = []
+        for r in normalized_replacements:
+            r_copy = r.copy()
+            r_copy.pop('element', None)  # Удаляем XML элемент
+            serializable_normalized.append(r_copy)
+        
+        stats['normalized_replacements'] = serializable_normalized
         
         return stats
     
@@ -264,7 +274,16 @@ class FormatterApplier:
             if 'lxml' in str(type(element)) or (hasattr(element, 'tag') and hasattr(element, 'xpath')):
                 # SDT-элемент: ищем w:t и заменяем текст
                 try:
-                    text_elements = element.xpath('.//w:t', namespaces={'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'})
+                    # Используем xpath без параметра namespaces для BaseOxmlElement
+                    # Пространство имен указывается прямо в XPath строке
+                    try:
+                        # Пытаемся использовать xpath с namespaces (для lxml.etree._Element)
+                        text_elements = element.xpath('.//w:t', namespaces={'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'})
+                    except TypeError:
+                        # Если ошибка - используем xpath без namespaces (для BaseOxmlElement)
+                        # BaseOxmlElement уже знает о пространствах имен из документа
+                        text_elements = element.xpath('.//w:t')
+                    
                     replaced = False
                     for text_element in text_elements:
                         current_text = text_element.text or ''
@@ -647,60 +666,91 @@ class FormatterApplier:
             True если замена применена
         """
         try:
-            # print(f"🔧 [TABLE] Начало замены в таблице: '{original_value}' → '{replacement_value}'")
-            # print(f"🔧 [TABLE] Информация о позиции: {position_info}")
+            print(f"🔧 [TABLE] Начало замены в таблице: '{original_value}' → '{replacement_value}'")
+            print(f"🔧 [TABLE] Информация о позиции: {position_info}")
             replacement_made = False
+            
+            # КРИТИЧНО: Позиция уже относительная к блоку (таблице), не нужно пересчитывать!
             target_position = position_info.get('start') if position_info else None
-            current_position = 0
-            found_target = False
+            
+            # Извлекаем весь текст таблицы для поиска позиции
+            table_text = ""
+            cell_positions = []  # Мапим позиции на ячейки
+            
             for row_idx, row in enumerate(table.rows):
                 for cell_idx, cell in enumerate(row.cells):
-                    # Безопасная проверка текста ячейки
                     cell_text = getattr(cell, 'text', '') or ''
-                    # print(f"🔧 [TABLE] Ячейка [{row_idx}][{cell_idx}]: '{cell_text[:50]}{'...' if len(cell_text) > 50 else ''}'")
-                    if original_value and original_value in cell_text:
-                        # print(f"🔧 [TABLE] ✅ Найден текст в ячейке [{row_idx}][{cell_idx}]")
-                        # Если указана позиция, проверяем соответствие
-                        if target_position is not None:
-                            # Ищем позицию текста в ячейке
-                            text_start_in_cell = cell_text.find(original_value)
-                            absolute_position = current_position + text_start_in_cell
-                            # print(f"🔧 [TABLE] Позиция в документе: {absolute_position}, целевая: {target_position}")
-                            # Проверяем соответствие позиции (с небольшой погрешностью)
-                            if abs(absolute_position - target_position) > 100:
-                                # print(f"🔧 [TABLE] ❌ Позиция не совпадает, пропускаем")
-                                current_position += len(cell_text)
-                                continue
-                            else:
-                                # print(f"🔧 [TABLE] ✅ Позиция совпадает!")
-                                found_target = True
-                        # Заменяем в каждом параграфе ячейки используя новый метод
-                        for para_idx, paragraph in enumerate(cell.paragraphs):
-                            paragraph_text = getattr(paragraph, 'text', '') or ''
-                            if original_value and original_value in paragraph_text:
-                                # print(f"🔧 [TABLE] Замена в параграфе {para_idx} ячейки [{row_idx}][{cell_idx}]")
-                                # Используем улучшенный метод замены в параграфе
-                                cell_replacement_made = self._replace_in_paragraph(
-                                    paragraph, original_value, replacement_value, {}
-                                )
-                                if cell_replacement_made:
-                                    replacement_made = True
-                                    # print(f"🔧 [TABLE] ✅ Замена в ячейке [{row_idx}][{cell_idx}] выполнена")
-                                    # Если это была целевая позиция, выходим
-                                    if found_target:
-                                        # print(f"🔧 [TABLE] 🎯 Целевая замена завершена, выходим")
-                                        return True
-                                else:
-                                    # print(f"🔧 [TABLE] ❌ Замена в ячейке [{row_idx}][{cell_idx}] не удалась")
-                                    pass
-                    # Увеличиваем счетчик позиции
-                    current_position += len(cell_text)
-            # print(f"🔧 [TABLE] Результат замены в таблице: {replacement_made}")
+                    cell_start = len(table_text)
+                    table_text += cell_text
+                    cell_end = len(table_text)
+                    
+                    cell_positions.append({
+                        'row': row_idx,
+                        'col': cell_idx,
+                        'start': cell_start,
+                        'end': cell_end,
+                        'cell': cell,
+                        'text': cell_text
+                    })
+                    
+                    # Добавляем разделитель как в BlockBuilder
+                    if cell_idx < len(row.cells) - 1:
+                        table_text += " | "
+                    
+                # Новая строка после каждой строки таблицы
+                table_text += "\n"
+            
+            print(f"🔧 [TABLE] Текст таблицы ({len(table_text)} символов): '{table_text[:100]}...'")
+            print(f"🔧 [TABLE] Ищем '{original_value}' на позиции {target_position}")
+            
+            # Находим ячейку по позиции
+            # КРИТИЧНО: Нормализуем текст для поиска (заменяем \xa0 на обычный пробел)
+            normalized_original = self._normalize_text(original_value)
+            
+            target_cell = None
+            for cell_info in cell_positions:
+                normalized_cell_text = self._normalize_text(cell_info['text'])
+                if normalized_original in normalized_cell_text:
+                    # Если позиция не указана, берём первую найденную
+                    if target_position is None:
+                        target_cell = cell_info
+                        print(f"🔧 [TABLE] ✅ Найден текст в ячейке [{cell_info['row']}][{cell_info['col']}] (без проверки позиции)")
+                        break
+                    else:
+                        # Проверяем что позиция попадает в диапазон ячейки
+                        if cell_info['start'] <= target_position < cell_info['end']:
+                            target_cell = cell_info
+                            print(f"🔧 [TABLE] ✅ Найден текст в ячейке [{cell_info['row']}][{cell_info['col']}] на позиции {target_position}")
+                            break
+            
+            if not target_cell:
+                print(f"🔧 [TABLE] ❌ Текст '{original_value}' не найден в таблице")
+                return False
+            
+            # Заменяем в найденной ячейке
+            cell = target_cell['cell']
+            for para_idx, paragraph in enumerate(cell.paragraphs):
+                paragraph_text = getattr(paragraph, 'text', '') or ''
+                # Проверяем с нормализацией текста
+                if original_value and (original_value in paragraph_text or 
+                                      normalized_original in self._normalize_text(paragraph_text)):
+                    print(f"🔧 [TABLE] Замена в параграфе {para_idx} ячейки [{target_cell['row']}][{target_cell['col']}]")
+                    cell_replacement_made = self._replace_in_paragraph(
+                        paragraph, original_value, replacement_value, {}
+                    )
+                    if cell_replacement_made:
+                        replacement_made = True
+                        print(f"🔧 [TABLE] ✅ Замена выполнена успешно!")
+                        return True
+                    else:
+                        print(f"🔧 [TABLE] ❌ Замена не удалась")
+            
             return replacement_made
+            
         except Exception as e:
-            # print(f"🔧 [TABLE] ❌ Ошибка замены в таблице: {str(e)}")
+            print(f"🔧 [TABLE] ❌ Ошибка замены в таблице: {str(e)}")
             import traceback
-            # print(f"🔧 [TABLE] Traceback: {traceback.format_exc()}")
+            print(f"🔧 [TABLE] Traceback: {traceback.format_exc()}")
             return False
     
     def _generate_replacement_value(self, original_value: str, category: str, existing_uuid: str = None) -> str:
@@ -716,13 +766,8 @@ class FormatterApplier:
             UUID для замещения
         """
         
-        # Специальная логика для разных категорий
-        if category == 'contract_number':
-            return self._generate_contract_number_replacement(original_value)
-        elif category == 'information_system':
-            return self._generate_information_system_replacement(original_value)
-        
-        # СТАНДАРТНАЯ ЛОГИКА: Всегда используем централизованный детерминистический UUID
+        # ВСЕГДА используем централизованный детерминистический UUID
+        # Специальная логика для contract_number и information_system ОТКЛЮЧЕНА
         return self.uuid_mapper.get_uuid_for_text(original_value, category)
     
     def _generate_contract_number_replacement(self, original_number: str) -> str:
@@ -1182,13 +1227,24 @@ class FormatterApplier:
             
             # Ищем SDT элементы в XML структуре контейнера
             if hasattr(container, '_element'):
-                sdt_elements = container._element.xpath('.//w:sdt', namespaces={'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'})
+                # Используем try/except для обработки разных типов элементов
+                try:
+                    # Пытаемся использовать xpath с namespaces (для lxml.etree._Element)
+                    sdt_elements = container._element.xpath('.//w:sdt', namespaces={'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'})
+                except TypeError:
+                    # Если ошибка - используем xpath без namespaces (для BaseOxmlElement)
+                    sdt_elements = container._element.xpath('.//w:sdt')
                 
                 print(f"🔧 [SDT-{container_type.upper()}] Найдено SDT элементов: {len(sdt_elements)}")
                 
                 for sdt_idx, sdt_element in enumerate(sdt_elements):
                     # Извлекаем текст из SDT элемента
-                    text_elements = sdt_element.xpath('.//w:t', namespaces={'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'})
+                    try:
+                        # Пытаемся использовать xpath с namespaces
+                        text_elements = sdt_element.xpath('.//w:t', namespaces={'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'})
+                    except TypeError:
+                        # Если ошибка - используем xpath без namespaces
+                        text_elements = sdt_element.xpath('.//w:t')
                     
                     for text_element in text_elements:
                         current_text = text_element.text or ''

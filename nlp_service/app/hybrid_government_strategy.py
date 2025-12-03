@@ -43,11 +43,10 @@ class HybridGovernmentStrategy(DetectionStrategy):
         # Настройки гибридной стратегии
         self.phrase_priority = config_settings.get('phrase_priority', 0.98)
         self.ner_confidence_boost = config_settings.get('ner_confidence_boost', 0.1)
-        self.government_keywords = config_settings.get('government_keywords', [
-            'министерство', 'департамент', 'управление', 'служба', 'комитет',
-            'администрация', 'правительство', 'дума', 'совет', 'федеральный',
-            'государственный', 'муниципальный', 'краевой', 'областной'
-        ])
+        # Ключевые слова и паттерны теперь берём из JSON/настроек
+        from nlp_config import NLPConfig
+        config = NLPConfig()
+        self.government_keywords = config.get_government_keywords()
         
         # Инициализируем компоненты для работы с текстом
         self.text_normalizer = TextNormalizer()
@@ -62,12 +61,8 @@ class HybridGovernmentStrategy(DetectionStrategy):
             print(f"⚠️ Не удалось загрузить словарь государственных организаций: {e}")
             self.partial_matcher = None
         
-        # Паттерны для фильтрации false positives
-        self.false_positive_patterns = [
-            r'^[А-Я]{2,4}$',  # Аббревиатуры типа ТЗ, ЧТЗ
-            r'^(система|описание|регламент)',  # Техническая документация
-            r'(требования|технический|программный)'  # Техническая терминология
-        ]
+        # Паттерны для фильтрации false positives теперь берём из JSON/настроек
+        self.false_positive_patterns = config.get_false_positive_patterns()
         
     def combine_results(self, results_by_method: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
         """

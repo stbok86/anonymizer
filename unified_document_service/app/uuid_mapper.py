@@ -40,34 +40,23 @@ class UUIDMapper:
         
     def get_uuid_for_text(self, original_text: str, category: str = "data") -> str:
         """
-        Получает консистентный UUID для данного текста
+        Получает уникальный UUID для каждого вхождения текста
         
         Args:
             original_text: Исходный текст
             category: Категория данных (для дополнительной энтропии)
             
         Returns:
-            UUID для этого текста (всегда одинаковый для одного текста)
+            Уникальный UUID (каждый раз новый, даже для одинакового текста)
         """
-        # Нормализуем текст для консистентности
-        normalized_text = original_text.strip().lower()
+        # Генерируем случайный UUID для каждого вхождения
+        # uuid4 генерирует случайный UUID, не зависящий от входных данных
+        random_uuid = str(uuid.uuid4())
         
-        # Создаем ключ для кэширования
-        cache_key = f"{category}:{normalized_text}"
+        # Сохраняем в кэш для обратимости (UUID → text)
+        self.uuid_to_text[random_uuid] = original_text
         
-        # Если уже есть в кэше - возвращаем
-        if cache_key in self.text_to_uuid:
-            return self.text_to_uuid[cache_key]
-        
-        # Генерируем детерминистический UUID
-        # Используем uuid5 для детерминизма (одинаковый input = одинаковый UUID)
-        deterministic_uuid = str(uuid.uuid5(self.namespace_uuid, cache_key))
-        
-        # Сохраняем в кэш
-        self.text_to_uuid[cache_key] = deterministic_uuid
-        self.uuid_to_text[deterministic_uuid] = original_text
-        
-        return deterministic_uuid
+        return random_uuid
     
     def get_text_for_uuid(self, uuid_str: str) -> Optional[str]:
         """
@@ -83,13 +72,13 @@ class UUIDMapper:
     
     def normalize_replacements(self, replacements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Нормализует список замен - приводит одинаковые тексты к одному UUID
+        Генерирует уникальные UUID для каждой замены
         
         Args:
-            replacements: Список замен с возможно разными UUID для одного текста
+            replacements: Список замен
             
         Returns:
-            Нормализованный список замен с консистентными UUID
+            Список замен с уникальными UUID для каждого вхождения
         """
         normalized = []
         
@@ -101,12 +90,12 @@ class UUIDMapper:
                 normalized.append(replacement)
                 continue
                 
-            # Получаем консистентный UUID для этого текста
-            consistent_uuid = self.get_uuid_for_text(original_text, category)
+            # Генерируем новый уникальный UUID для каждого вхождения
+            unique_uuid = self.get_uuid_for_text(original_text, category)
             
-            # Создаем нормализованную замену
+            # Создаем замену с уникальным UUID
             normalized_replacement = replacement.copy()
-            normalized_replacement['uuid'] = consistent_uuid
+            normalized_replacement['uuid'] = unique_uuid
             
             normalized.append(normalized_replacement)
         

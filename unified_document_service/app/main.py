@@ -157,7 +157,7 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
                                 'block_id': detection.get('block_id', f'nlp_block_{nlp_counter}'),
                                 'category': detection.get('category', 'NLP Detection'),
                                 'original_value': detection.get('original_value', ''),
-                                'uuid': detection.get('uuid', f"NLP_{nlp_counter}_{detection.get('category', 'unknown')}"),
+                                # ❌ НЕ ДОБАВЛЯЕМ uuid='placeholder' - пусть генерируется централизованно
                                 'position': detection.get('position', {}),
                                 'confidence': detection.get('confidence', 0.8),
                                 'method': detection.get('method', 'nlp_unknown'),  # Добавляем поле method

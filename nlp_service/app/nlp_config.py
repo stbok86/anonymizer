@@ -11,6 +11,41 @@ from pathlib import Path
 
 
 class NLPConfig:
+    def get_all_patterns(self) -> List[Dict[str, Any]]:
+        """Загружает все паттерны из nlp_patterns.json"""
+        patterns_path = self.get_patterns_file_path()
+        with open(patterns_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get('patterns', [])
+
+    def get_patterns_by_category(self, category: str) -> List[Dict[str, Any]]:
+        """Возвращает паттерны по категории из nlp_patterns.json"""
+        return [p for p in self.get_all_patterns() if p.get('category') == category]
+
+    def get_phrase_categories_from_json(self) -> Dict[str, List[str]]:
+        """Возвращает словарь: категория -> список фраз (type=phrase/spacy_context) из nlp_patterns.json"""
+        result = {}
+        for p in self.get_all_patterns():
+            if p.get('type') in ('phrase', 'spacy_context'):
+                cat = p['category']
+                result.setdefault(cat, []).append(p['pattern'])
+        return result
+
+    def get_normalization_patterns(self) -> List:
+        """Возвращает паттерны для нормализации текста из nlp_patterns.json (category='normalization')"""
+        return [ (p['pattern'], p.get('replacement', '')) for p in self.get_all_patterns() if p.get('category') == 'normalization']
+
+    def get_false_positive_patterns(self) -> List[str]:
+        """Возвращает паттерны для фильтрации ложных срабатываний (category='false_positive')"""
+        return [p['pattern'] for p in self.get_all_patterns() if p.get('category') == 'false_positive']
+
+    def get_government_keywords(self) -> List[str]:
+        """Возвращает ключевые слова для госорганизаций (category='government_keyword')"""
+        return [p['pattern'] for p in self.get_all_patterns() if p.get('category') == 'government_keyword']
+
+    def get_information_system_patterns(self) -> List[Dict[str, Any]]:
+        """Возвращает паттерны для информационных систем (category='information_system')"""
+        return [p for p in self.get_all_patterns() if p.get('category') == 'information_system']
     """Класс для загрузки и управления конфигурацией NLP Service"""
     
     def __init__(self, config_path: Optional[str] = None):

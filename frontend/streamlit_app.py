@@ -354,31 +354,18 @@ def step2_review_findings():
                 if not approved_items:
                     st.warning("⚠️ Не выбрано ни одного элемента для анонимизации")
                 else:
-                    # Вызываем API для полной анонимизации
+                    # 🎯 Вызываем API для ПОЛНОЙ анонимизации
+                    # Backend сам сгенерирует Excel с правильными UUID
                     anonymized_files = anonymize_document_full_api(
                         st.session_state.uploaded_file, 
                         approved_items,
                         st.session_state.patterns_file
                     )
                     
-                    # Генерируем таблицу замен
-                    replacements_excel = generate_replacements_table(
-                        approved_items, 
-                        st.session_state.uploaded_file.name
-                    )
+                    # ❌ УДАЛЕНО: Генерация Excel на frontend (генерировал случайные UUID)
+                    # Excel теперь приходит от backend с детерминистичными UUID
                     
                     if anonymized_files:
-                        # Добавляем таблицу замен к файлам для скачивания
-                        replacements_filename = f"Replacements_{st.session_state.uploaded_file.name.rsplit('.', 1)[0]}.xlsx"
-                        
-                        anonymized_files.append({
-                            'type': 'replacements',
-                            'label': '📋 Таблица замен',
-                            'data': replacements_excel,
-                            'filename': replacements_filename,
-                            'mime': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                        })
-                        
                         # Сохраняем сгенерированные файлы в session_state
                         st.session_state.anonymized_files = anonymized_files
                         
@@ -486,54 +473,6 @@ def step3_download_results():
         st.session_state.anonymized_files = []
         st.session_state.anonymization_stats = {}  # Сбрасываем статистику
         st.rerun()
-
-def generate_replacements_table(approved_items, original_filename):
-    """Генерация Excel таблицы замен в требуемом формате"""
-    import pandas as pd
-    import io
-    
-    # Подготавливаем данные для таблицы
-    replacements_data = []
-    
-    for i, item in enumerate(approved_items, 1):
-        # Используем полный UUID из элемента
-        existing_uuid = item.get('uuid', '')
-        category = item.get('category', 'DATA')
-        
-        # Генерируем замену только с UUID (без префиксов)
-        if existing_uuid:
-            # Используем полный UUID как есть
-            replacement_uuid = existing_uuid
-        else:
-            # Fallback - генерируем новый UUID если нет существующего
-            import uuid as uuid_module
-            replacement_uuid = str(uuid_module.uuid4())
-        
-        # Используем только UUID без префиксов
-        replacement_id = replacement_uuid
-        
-        replacements_data.append({
-            '№': i,
-            'Исходные данные': item.get('original_value', ''),
-            'Замена (идентификатор)': replacement_id
-        })
-    
-    # Создаем DataFrame
-    df = pd.DataFrame(replacements_data)
-    
-    # Сохраняем в Excel
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name='Замены', index=False)
-        
-        # Настраиваем форматирование
-        worksheet = writer.sheets['Замены']
-        worksheet.column_dimensions['A'].width = 5
-        worksheet.column_dimensions['B'].width = 40
-        worksheet.column_dimensions['C'].width = 30
-    
-    output.seek(0)
-    return output.getvalue()
 
 def analyze_document_api(uploaded_file, patterns_file):
     """Анализ документа через HTTP API"""
@@ -657,19 +596,14 @@ def anonymize_document_full_api(uploaded_file, approved_items, patterns_file):
         
         data = {
             'patterns_file': patterns_file,
-            'selected_items': json.dumps([{
-                'block_id': item.get('block_id', ''),
-                'original_value': item.get('original_value', ''),
-                'uuid': item.get('uuid', ''),
-                'position': item.get('position', {}),
-                'category': item.get('category', 'unknown'),
-                'confidence': item.get('confidence', 1.0)
-            } for item in approved_items])  # Передаем только выбранные элементы
+            'generate_excel_report': 'true',  # ✅ ВКЛЮЧАЕМ генерацию Excel на backend
+            'generate_json_ledger': 'true'     # ✅ ВКЛЮЧАЕМ генерацию JSON Ledger
         }
         
-        # Отправляем запрос на селективную анонимизацию
+        # 🎯 ИСПОЛЬЗУЕМ /anonymize_full вместо /anonymize_selected
+        # Этот endpoint генерирует правильные UUID через backend
         response = requests.post(
-            f"{API_BASE_URL}/anonymize_selected",  # Используем селективный endpoint 
+            f"{API_BASE_URL}/anonymize_full",  # ✅ ПОЛНАЯ анонимизация с корректными UUID
             files=files,
             data=data,
             timeout=120
@@ -681,27 +615,46 @@ def anonymize_document_full_api(uploaded_file, approved_items, patterns_file):
             # Сохраняем статистику анонимизации в session_state
             st.session_state.anonymization_stats = {
                 'total_found': len(approved_items),  # Количество найденных элементов (выбранных пользователем)
-                'total_anonymized': len(approved_items),  # Количество отправленных на анонимизацию
+                'total_anonymized': result.get('statistics', {}).get('total_replacements', 0),  # Фактически замененных
                 'replacement_stats': result.get('statistics', {}),  # Детальная статистика замен
-                'replacements_applied': result.get('replacements_applied', 0)  # Фактически выполненные замены
+                'replacements_applied': result.get('statistics', {}).get('total_replacements', 0)
             }
             
             # Формируем список файлов для скачивания
             download_files = []
             
-            # Анонимизированный документ (возвращается напрямую в base64)
-            if result.get('anonymized_document_base64'):
-                doc_data = base64.b64decode(result['anonymized_document_base64'])
+            # Анонимизированный документ
+            if 'files_base64' in result and 'anonymized_document_base64' in result['files_base64']:
+                doc_data = base64.b64decode(result['files_base64']['anonymized_document_base64'])
                 download_files.append({
                     'type': 'document',
                     'label': '📄 Скачать анонимизированный документ',
                     'data': doc_data,
-                    'filename': result.get('filename', f"{uploaded_file.name.rsplit('.', 1)[0]}_anonymized.docx"),
+                    'filename': f"{uploaded_file.name.rsplit('.', 1)[0]}_anonymized.docx",
                     'mime': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 })
             
-            # Примечание: /anonymize_selected не генерирует Excel отчет
-            # Excel отчет создается только через generate_replacements_table
+            # 🎯 ИСПОЛЬЗУЕМ Excel от backend (с правильными UUID)
+            if 'files_base64' in result and 'excel_report_base64' in result['files_base64']:
+                excel_data = base64.b64decode(result['files_base64']['excel_report_base64'])
+                download_files.append({
+                    'type': 'replacements',
+                    'label': '📋 Таблица замен (Excel)',
+                    'data': excel_data,
+                    'filename': f"Replacements_{uploaded_file.name.rsplit('.', 1)[0]}.xlsx",
+                    'mime': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                })
+            
+            # JSON Ledger (опционально)
+            if 'files_base64' in result and 'json_ledger_base64' in result['files_base64']:
+                json_data = base64.b64decode(result['files_base64']['json_ledger_base64'])
+                download_files.append({
+                    'type': 'ledger',
+                    'label': '📊 JSON Ledger',
+                    'data': json_data,
+                    'filename': f"Ledger_{uploaded_file.name.rsplit('.', 1)[0]}.json",
+                    'mime': 'application/json'
+                })
             
             return download_files
             

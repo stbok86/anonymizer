@@ -1,0 +1,47 @@
+{
+  "patterns": [
+    {"category": "person_name", "type": "regex", "priority": 1, "pattern": "\\b[А-ЯЁ][а-яё]+\\s+[А-ЯЁ][а-яё]+\\s+[А-ЯЁ][а-яё]+\\b", "description": "ФИО полностью (Фамилия Имя Отчество)"},
+    {"category": "person_name", "type": "regex", "priority": 1, "pattern": "\\b[А-ЯЁ][а-яё]+\\s+[А-ЯЁ]\\.[\\s\\xa0]*[А-ЯЁ]\\.", "description": "Фамилия И.О. (с учетом nbsp)"},
+    {"category": "person_name", "type": "regex", "priority": 1, "pattern": "\\b[А-ЯЁ]\\.[\\s\\xa0]*[А-ЯЁ]\\.[\\s\\xa0]+[А-ЯЁ][а-яё]+\\b", "description": "И.О. Фамилия (с учетом nbsp)"},
+    {"category": "person_name", "type": "regex", "priority": 1, "pattern": "\\b[А-ЯЁ]\\.[\\s\\xa0]*[А-ЯЁ]\\.[\\s\\xa0]*[А-ЯЁ][а-яё]+\\b", "description": "И.О.Фамилия (плотный формат с nbsp)"},
+
+    {"category": "position", "type": "spacy_context", "priority": 1, "pattern": "", "description": "Должности и роли сотрудников"},
+
+    {"category": "organization", "type": "regex", "priority": 1, "pattern": "(?i)\\b(общество с ограниченной ответственностью|обществ[ауое]м? с ограниченной ответственность[юи]|акционерное общество|акционерног[оа] обществ[ауо]м?|закрытое акционерное общество|закрытог[оа] акционерног[оа] обществ[ауо]м?|открытое акционерное общество|открытог[оа] акционерног[оа] обществ[ауо]м?|публичное акционерное общество|публичног[оа] акционерног[оа] обществ[ауо]м?)\\s+[«\"']?[А-ЯЁа-яё\\s\\-]+[»\"']?", "description": "Организации с полной юридической формой (все падежи)"},
+    {"category": "organization", "type": "regex", "priority": 1, "pattern": "\\b(ООО|АО|ПАО|ЗАО|ИП|ГУП|МУП|ГБУ|МБУ|ФГБУ|ФГУП)\\s+[А-ЯЁа-яё\\s]*[«\"']?[А-ЯЁа-яё\\s\\-]+[»\"']?", "description": "Организации с юридической формой (расширенный)"},
+    {"category": "organization", "type": "regex", "priority": 1, "pattern": "(?i)\\b(министерств[оа]|департамент[а]?|агентств[оа]|служб[аы])\\s+[а-яёА-ЯЁ]+(?:\\s+[а-яёА-ЯЁ]+){1,6}", "description": "Государственные органы и министерства (с учётом падежей, без управления)"},
+    {"category": "organization", "type": "spacy_ner", "priority": 2, "pattern": "", "description": "Организации (NER)"},
+    {"category": "department", "type": "regex", "priority": 1, "pattern": "\\b(отдел|управление|департамент|служба|сектор)\\s+[А-ЯЁа-яё\\s]+", "description": "Подразделения организации"},
+
+    {"category": "salary", "type": "regex", "priority": 1, "pattern": "\\b(зарплата|оклад|заработная\\s+плата|доход)\\s*[:\\-]?\\s*\\d+[\\d\\s]*\\s?(руб|₽|рублей?|долларов?|\\$|евро|€)", "description": "Информация о зарплате/доходах"},
+    {"category": "financial_amount", "type": "regex", "priority": 1, "pattern": "\\b\\d+[\\d\\s]*[,.]?\\d*\\s?(руб|₽|рублей?|долларов?|\\$|евро|€)\\b", "description": "Денежные суммы в контексте"},
+
+    {"category": "health_info", "type": "regex", "priority": 1, "pattern": "\\b(диагноз|болезнь|заболевание|лечение|медицин|больниц|поликлиник|врач|доктор)\\b", "description": "Сведения о здоровье (контекст)"},
+
+    {"category": "beliefs", "type": "regex", "priority": 1, "pattern": "\\b(религ|веро|полит|убежден|мировоззрен|партии)\\b", "description": "Убеждения и взгляды"},
+
+    {"category": "login_credential", "type": "regex", "priority": 1, "pattern": "\\b(логин|пароль|учетн[ая]\\s+запись|авторизац|аутентиф)\\b", "description": "Данные аутентификации (контекст)"},
+    {"category": "system_name", "type": "regex", "priority": 1, "pattern": "\\b(система|подсистема|сервис|платформа)\\s+[А-ЯЁа-яё\\-\\d]+", "description": "Названия систем и сервисов"},
+
+    {"category": "trade_secret", "type": "regex", "priority": 1, "pattern": "\\b(конфиденциальн|коммерческ[ая]\\s+тайн|ноу-хау|секретн)\\b", "description": "Коммерческая тайна (контекст)"},
+    {"category": "contract_number", "type": "regex", "priority": 1, "pattern": "(?i)\\b(государственн(?:ый|ого|ому|ым|ом)\\s+контракт[ауе]?|договор[ауе]?|контракт[ауе]?)\\s+от\\s+\\d{1,2}\\s+[а-яё]+\\s+\\d{4}\\s+г\\.\\s+№\\s+[\\dА-ЯЁа-яё\\-\\/]+", "description": "Номер гос. контракта/договора с датой (все падежи)"},
+    {"category": "contract_number", "type": "regex", "priority": 1, "pattern": "(?i)\\b(государственн(?:ый|ого|ому|ым|ом)\\s+контракт[ауе]?|договор[ауе]?|контракт[ауе]?)\\s+№\\s+[\\dА-ЯЁа-яё\\-\\/]+\\s+от\\s+\\d{1,2}\\.\\d{2}\\.\\d{4}", "description": "Номер контракта/договора формат № xxx от дд.мм.гггг"},
+    {"category": "contract_info", "type": "regex", "priority": 2, "pattern": "\\b(договор|контракт|соглашение)\\s+№?\\s*[\\dА-ЯЁа-яё\\-\\/]+", "description": "Информация о договорах (общий паттерн)"},
+
+    {"category": "location", "type": "spacy_ner", "priority": 1, "pattern": "", "description": "Географические локации (NER)"},
+    {"category": "address", "type": "regex", "priority": 1, "pattern": "\\d{6},?\\s+[А-ЯЁа-яё]+\\s+(край|область|республика|город),?\\s+[гп]\\.[\\s]?[А-ЯЁа-яё]+,?\\s+ул\\.[\\s]?[А-ЯЁа-яё]+,?\\s+д\\.[\\s]?\\d+", "description": "Полный адрес с индексом (614000, Пермский край, г. Пермь, ул. Ленина, д. 66)"},
+    {"category": "address", "type": "regex", "priority": 1, "pattern": "[гп]\\.[\\s]?[А-ЯЁа-яё]+,?\\s+ул\\.[\\s]?[А-ЯЁа-яё]+,?\\s+д\\.[\\s]?\\d+", "description": "Адрес с городом (г. Пермь, ул. Ленина, д. 66)"},
+    {"category": "address", "type": "regex", "priority": 1, "pattern": "ул\\.[\\s]?[А-ЯЁа-яё]+,?\\s+д\\.[\\s]?\\d+", "description": "Адрес улица-дом (ул. Ленина, д. 66)"},
+    {"category": "address_context", "type": "regex", "priority": 1, "pattern": "\\b(адрес|проживает?|находится|расположен)\\s+[А-ЯЁа-яё\\s\\d,.-]+", "description": "Адресная информация в контексте"},
+
+    {"category": "information_system", "type": "regex", "priority": 1, "pattern": "\\b(ЕИС)([А-ЯA-Z]{2,})\\b", "description": "ЕИС + приватная часть"},
+    {"category": "information_system", "type": "regex", "priority": 1, "pattern": "\\b(АИС)([А-ЯA-Z]{2,})\\b", "description": "АИС + приватная часть"},
+    {"category": "information_system", "type": "regex", "priority": 1, "pattern": "\\b(ГИС)([А-ЯA-Z]{2,})\\b", "description": "ГИС + приватная часть"},
+    {"category": "information_system", "type": "regex", "priority": 1, "pattern": "\\b(ЕГИС)([A-ZА-ЯЁ]{2,})\\b", "description": "ЕГИС + аббревиатура (только заглавные)"},
+    {"category": "information_system", "type": "regex", "priority": 1, "pattern": "\\b(ПГИС)([А-ЯA-Z]{2,})\\b", "description": "ПГИС + приватная часть"},
+    {"category": "information_system", "type": "regex", "priority": 1, "pattern": "\\b(ГАС)([А-ЯA-Z]{2,})\\b", "description": "ГАС + приватная часть"},
+    {"category": "information_system", "type": "regex", "priority": 1, "pattern": "\\b(ФИС)([А-ЯA-Z]{2,})\\b", "description": "ФИС + приватная часть"},
+
+    {"category": "information_system", "type": "phrase", "priority": 2, "pattern": "ГИС ЖКХ", "description": "Пример фразового паттерна для ИС"}
+  ]
+}

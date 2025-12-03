@@ -146,7 +146,8 @@ class BlockBuilder:
 		for row in table.rows:
 			row_text = []
 			for cell in row.cells:
-				cell_content = cell.text.strip()
+				# КРИТИЧНО: Нормализуем текст ячейки (заменяем \xa0 на пробел)
+				cell_content = self._normalize_text(cell.text)
 				if cell_content:
 					row_text.append(cell_content)
 			if row_text:  # Добавляем строку только если в ней есть содержимое

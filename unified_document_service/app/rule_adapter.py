@@ -248,7 +248,7 @@ class RuleEngineAdapter:
                     matches.append({
                         'category': entity.get('category', 'unknown').lower(),
                         'original_value': entity.get('original_value', ''),
-                        'uuid': entity.get('uuid', str(uuid.uuid4())),
+                        # НЕ генерируем UUID здесь - это делается в formatter_applier через uuid_mapper
                         'position': {
                             'start': entity.get('position', {}).get('start', 0),
                             'end': entity.get('position', {}).get('end', 0)

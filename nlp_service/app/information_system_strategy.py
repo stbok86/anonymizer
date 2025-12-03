@@ -74,51 +74,18 @@ class InformationSystemStrategy(DetectionStrategy):
             self.is_initialized = False
     
     def _setup_patterns(self):
-        """Настройка паттернов для детекции ИС"""
-        
-        # 1. Полные аббревиатуры с приватной частью (приоритет 1)
-        complex_abbreviations = [
-            r'(?i)(ЕИС)([А-ЯA-Z]+)',  # ЕИСУФХД
-            r'(?i)(АИС)([А-ЯA-Z]+)',  # АИСЧТО-ТО
-            r'(?i)(ГИС)([А-ЯA-Z]+)',  # ГИСЖКХ
-            r'(?i)(ФГИС)([А-ЯA-Z]+)', # ФГИСТП
-            r'(?i)(ЕГИС)([А-ЯA-Z]+)', # ЕГИСЧТО-ТО
-            r'(?i)(ПГИС)([А-ЯA-Z]+)', # ПГИСЧТО-ТО
-            r'(?i)(ГАС)([А-ЯA-Z]+)',  # ГАСЧТО-ТО
-            r'(?i)(ФИС)([А-ЯA-Z]+)',  # ФИСЧТО-ТО
-            r'(?i)(РИС)([А-ЯA-Z]+)',  # РИСЧТО-ТО
-        ]
-        
-        # 2. Аббревиатуры с пробелами и приватной частью (приоритет 2) - включая неразрывные пробелы
-        # Паттерн пробелов: обычные пробелы + неразрывные пробелы + другие whitespace
-        space_pattern = r'[\s\u00A0\u2000-\u200B\u2028\u2029\u202F\u205F\u3000]+'
-        
-        spaced_abbreviations = [
-            r'(?i)(ФГИС)' + space_pattern + r'([А-ЯA-Z]{1,10}(?:' + space_pattern + r'[А-ЯA-Z]{1,10}){0,2})(?=' + space_pattern + r'[a-яa-z]|\s*$)', # ФГИС ТП
-            r'(?i)(ЕГИС)' + space_pattern + r'([А-ЯA-Z]{1,10}(?:' + space_pattern + r'[А-ЯA-Z]{1,10}){0,2})(?=' + space_pattern + r'[a-яa-z]|\s*$)', # ЕГИС ТП
-            r'(?i)(ПГИС)' + space_pattern + r'([А-ЯA-Z]{1,10}(?:' + space_pattern + r'[А-ЯA-Z]{1,10}){0,2})(?=' + space_pattern + r'[a-яa-z]|\s*$)', # ПГИС ТП
-            r'(?i)(ЕИС)' + space_pattern + r'([А-ЯA-Z]{1,10}(?:' + space_pattern + r'[А-ЯA-Z]{1,10}){0,2})(?=' + space_pattern + r'[a-яa-z]|\s*$)',  # ЕИС УФХД ПК
-            r'(?i)(АИС)' + space_pattern + r'([А-ЯA-Z]{1,10}(?:' + space_pattern + r'[А-ЯA-Z]{1,10}){0,2})(?=' + space_pattern + r'[a-яa-z]|\s*$)',  # АИС ПРОЦЕССОВ
-            r'(?i)(ГИС)' + space_pattern + r'([А-ЯA-Z]{1,10}(?:' + space_pattern + r'[А-ЯA-Z]{1,10}){0,2})(?=' + space_pattern + r'[a-яa-z]|\s*$)',  # ГИС ЖКХ
-            r'(?i)(ГАС)' + space_pattern + r'([А-ЯA-Z]{1,10}(?:' + space_pattern + r'[А-ЯA-Z]{1,10}){0,2})(?=' + space_pattern + r'[a-яa-z]|\s*$)',  # ГАС ПРОЦЕССОВ
-            r'(?i)(ФИС)' + space_pattern + r'([А-ЯA-Z]{1,10}(?:' + space_pattern + r'[А-ЯA-Z]{1,10}){0,2})(?=' + space_pattern + r'[a-яa-z]|\s*$)',  # ФИС ПРОЦЕССОВ
-            r'(?i)(РИС)' + space_pattern + r'([А-ЯA-Z]{1,10}(?:' + space_pattern + r'[А-ЯA-Z]{1,10}){0,2})(?=' + space_pattern + r'[a-яa-z]|\s*$)',  # РИС ПРОЦЕССОВ
-        ]
-        
-        # 3. Простые аббревиатуры (только анонимная часть - низкий приоритет)
-        simple_abbreviations = [
-            "ЕИС", "АИС", "ГИС", "ПГИС", "ЕГИС",
-            "ГАС", "ФГИС", "СМЭВ", "ФИС", "РИС",
-            "ЕИП", "ГИП", "ЕСИА", "ЕПГУ"
-        ]
-        
-        # Добавляем сложные аббревиатуры (высокий приоритет)
-        self.complex_abbr_patterns = complex_abbreviations
-        self.spaced_abbr_patterns = spaced_abbreviations
-        
-        # Добавляем простые аббревиатуры (низкий приоритет)
-        abbr_docs = [self.nlp(abbr) for abbr in simple_abbreviations]
-        self.phrase_matcher.add("IS_SIMPLE_ABBREVIATIONS", abbr_docs)
+        """Загрузка паттернов для детекции ИС из JSON-файла"""
+        from nlp_config import NLPConfig
+        config = NLPConfig()
+        patterns = config.get_information_system_patterns()
+        if not patterns:
+            raise RuntimeError("Паттерны для информационных систем не найдены в nlp_patterns.json")
+        self.complex_abbr_patterns = [p['pattern'] for p in patterns if p.get('type') == 'regex' and p.get('priority', 1) == 1]
+        self.spaced_abbr_patterns = [p['pattern'] for p in patterns if p.get('type') == 'regex' and p.get('priority', 1) == 2]
+        abbr_phrases = [p['pattern'] for p in patterns if p.get('type') == 'phrase']
+        abbr_docs = [self.nlp(abbr) for abbr in abbr_phrases]
+        if abbr_docs:
+            self.phrase_matcher.add("IS_SIMPLE_ABBREVIATIONS", abbr_docs)
     
     def detect_information_systems_in_text(self, text: str, doc: Doc = None) -> List[Dict[str, Any]]:
         """
@@ -141,23 +108,14 @@ class InformationSystemStrategy(DetectionStrategy):
         detections = []
         
         try:
-            # 1. Поиск сложных аббревиатур (высокий приоритет)
             complex_detections = self._search_complex_abbreviations(text)
             detections.extend(complex_detections)
-            
-            # 2. Поиск полных названий через простые правила (высокий приоритет для полных названий)
             regex_detections = self._simple_pattern_search(text, doc, detections)
             detections.extend(regex_detections)
-            
-            # 3. Поиск простых аббревиатур (только если нет перекрытий с полными названиями)
             simple_detections = self._search_simple_abbreviations(text, doc, detections)
             detections.extend(simple_detections)
-            
-            # 4. Поиск аббревиатур с пробелами (только если нет конфликтов с уже найденными)
             spaced_detections = self._search_spaced_abbreviations_filtered(text, detections)
             detections.extend(spaced_detections)
-            
-            # 5. Удаляем дубликаты
             detections = self._remove_duplicates(detections, threshold=0.7)
             
         except Exception as e:
@@ -167,38 +125,45 @@ class InformationSystemStrategy(DetectionStrategy):
         return detections
     
     def _search_complex_abbreviations(self, text: str) -> List[Dict[str, Any]]:
-        """Поиск сложных аббревиатур типа ЕИСУФХД"""
+        """Поиск сложных аббревиатур типа ЕИСУФХД с подробным логированием"""
         detections = []
-        
         for pattern in self.complex_abbr_patterns:
             matches = re.finditer(pattern, text)
             for match in matches:
+                start_char = match.start()
+                end_char = match.end()
+                # Post-filter: abbreviation must not be inside a word (not preceded or followed by lowercase letter)
+                before = text[start_char - 1] if start_char > 0 else ''
+                after = text[end_char] if end_char < len(text) else ''
+                debug_context = text[max(0, start_char-20):min(len(text), end_char+20)]
+                print(f"[DEBUG][IS][complex_abbr] pattern: {pattern} | match: '{match.group(0)}' | pos: {start_char}-{end_char} | before: '{before}' | after: '{after}' | context: ...{debug_context}...")
+                if (before and before.islower()) or (after and after.islower()):
+                    print(f"[DEBUG][IS][complex_abbr][SKIP] False positive filtered: '{match.group(0)}' at {start_char}-{end_char}")
+                    continue
                 anonymous_part = match.group(1)  # ЕИС
                 private_part = match.group(2)    # УФХД
                 full_match = match.group(0)      # ЕИСУФХД
-                
-                start_char = match.start()
-                end_char = match.end()
-                
-                # Создаем анонимизированный текст
                 anonymized_text = f"{anonymous_part} [SYSTEM_ID]"
-                
                 detection = {
                     'category': 'information_system',
                     'original_value': full_match,
-                    'confidence': 0.9,  # Высокая уверенность для точных аббревиатур
+                    'confidence': 0.9,
                     'position': {'start': start_char, 'end': end_char},
                     'method': 'complex_abbreviation',
-                    'uuid': 'placeholder',  # Временный placeholder, UUID будет генерироваться централизованно в FormatterApplier
+                    'uuid': 'placeholder',
                     'system_type': 'information_system',
                     'core_part': anonymous_part,
                     'private_part': private_part,
                     'anonymized_text': anonymized_text
                 }
-                
-                print(f"🔧 Общая часть (без нормализации): '{anonymous_part}'")
+                # Подробный отладочный лог
+                print(
+                    f"[complex_abbreviation][DETECT] pattern: {pattern} | "
+                    f"match: '{full_match}' | pos: {start_char}-{end_char} | "
+                    f"core: '{anonymous_part}' | private: '{private_part}' | "
+                    f"anonymized: '{anonymized_text}' | text: ...{text[max(0, start_char-30):min(len(text), end_char+30)]}..."
+                )
                 detections.append(detection)
-        
         return detections
     
     def _search_spaced_abbreviations_filtered(self, text: str, existing_detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -215,24 +180,28 @@ class InformationSystemStrategy(DetectionStrategy):
         for pattern in self.spaced_abbr_patterns:
             matches = re.finditer(pattern, text)
             for match in matches:
+                start_char = match.start()
+                end_char = match.end()
+                # Post-filter: abbreviation must not be inside a word (not preceded or followed by lowercase letter)
+                before = text[start_char - 1] if start_char > 0 else ''
+                after = text[end_char] if end_char < len(text) else ''
+                debug_context = text[max(0, start_char-20):min(len(text), end_char+20)]
+                print(f"[DEBUG][IS][spaced_abbr] pattern: {pattern} | match: '{match.group(0)}' | pos: {start_char}-{end_char} | before: '{before}' | after: '{after}' | context: ...{debug_context}...")
+                if (before and before.islower()) or (after and after.islower()):
+                    print(f"[DEBUG][IS][spaced_abbr][SKIP] False positive filtered: '{match.group(0)}' at {start_char}-{end_char}")
+                    continue
                 anonymous_part = match.group(1)  # ЕИС/ФГИС
                 private_part = match.group(2).strip()  # УФХД ПК
                 full_match = match.group(0)      # ЕИС УФХД ПК
-                
-                start_char = match.start()
-                end_char = match.end()
-                
                 # Проверяем пересечения с существующими детекциями
                 is_overlapping = False
                 for occ_start, occ_end in occupied_ranges:
                     if not (end_char <= occ_start or start_char >= occ_end):
                         is_overlapping = True
                         break
-                
                 if not is_overlapping:
                     # Создаем анонимизированный текст (будет обработан в FormatterApplier)
                     anonymized_text = f"{anonymous_part} [SYSTEM_ID]"
-                    
                     detection = {
                         'category': 'information_system',
                         'original_value': full_match,
@@ -245,10 +214,8 @@ class InformationSystemStrategy(DetectionStrategy):
                         'private_part': private_part,
                         'anonymized_text': anonymized_text
                     }
-                    
                     print(f"🔧 Общая часть (без нормализации): '{anonymous_part}'")
                     detections.append(detection)
-        
         return detections
 
     def _search_spaced_abbreviations_filtered(self, text: str, existing_detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -274,11 +241,9 @@ class InformationSystemStrategy(DetectionStrategy):
         
         for i, token in enumerate(doc):
             token_text = token.text.upper()
-            
             # Проверяем, является ли токен одной из наших аббревиатур
             if token_text in abbreviation_tokens:
                 anonymous_part = abbreviation_tokens[token_text]
-                
                 # Проверяем, не пересекается ли с уже найденными детекциями
                 start_char = token.idx
                 is_overlapping = False
@@ -286,44 +251,35 @@ class InformationSystemStrategy(DetectionStrategy):
                     if not (start_char >= occ_end or start_char < occ_start):
                         is_overlapping = True
                         break
-                
                 if is_overlapping:
                     continue
-                
                 # Ищем следующие токены-аббревиатуры (заглавные буквы, длина <= 10)
                 private_parts = []
                 current_pos = i + 1
-                
                 while current_pos < len(doc):
                     next_token = doc[current_pos]
                     next_text = next_token.text.strip()
-                    
                     # Пропускаем пробельные токены (включая неразрывные пробелы)
                     if not next_text or next_text.isspace():
                         current_pos += 1
                         continue
-                    
                     # Проверяем, является ли следующий токен частью аббревиатуры
                     if (next_text and 
                         len(next_text) <= 10 and 
                         next_text.isupper() and 
                         next_text.isalpha() and
                         not next_text.lower() in ['и', 'в', 'на', 'с', 'для', 'по']):  # Исключаем предлоги
-                        
                         private_parts.append(next_text)
                         current_pos += 1
-                        
                         # Ограничиваем максимум 3 токена в приватной части
                         if len(private_parts) >= 3:
                             break
                     else:
                         # Если встретили не-аббревиатуру, останавливаемся
                         break
-                
                 # Создаем детекцию только если есть приватная часть
                 if private_parts:
                     private_part = ' '.join(private_parts)
-                    
                     # Вычисляем точные позиции на основе токенов
                     # Находим последний значимый (не-пробельный) токен
                     last_meaningful_pos = current_pos - 1
@@ -331,20 +287,18 @@ class InformationSystemStrategy(DetectionStrategy):
                            last_meaningful_pos < len(doc) and 
                            (not doc[last_meaningful_pos].text.strip() or doc[last_meaningful_pos].text.isspace())):
                         last_meaningful_pos -= 1
-                    
                     if last_meaningful_pos >= 0 and last_meaningful_pos < len(doc):
                         last_token = doc[last_meaningful_pos]
                         end_char = last_token.idx + len(last_token.text)
                     else:
                         # Fallback: используем позицию текущего токена
                         end_char = token.idx + len(token.text) + len(private_part) + 1
-                    
                     # ИСПРАВЛЕНИЕ: Извлекаем точный текст с сохранением исходных пробелов
                     full_match = text[start_char:end_char]
-                    
+                    debug_context = text[max(0, start_char-20):min(len(text), end_char+20)]
+                    print(f"[DEBUG][IS][spacy_abbr] abbr: '{anonymous_part}' | private: '{private_part}' | match: '{full_match}' | pos: {start_char}-{end_char} | context: ...{debug_context}...")
                     # Создаем анонимизированный текст (будет обработан в FormatterApplier)
                     anonymized_text = f"{anonymous_part} [SYSTEM_ID]"
-                    
                     detection = {
                         'category': 'information_system',
                         'original_value': full_match,
@@ -357,10 +311,7 @@ class InformationSystemStrategy(DetectionStrategy):
                         'private_part': private_part,
                         'anonymized_text': anonymized_text
                     }
-                    
-                    print(f"🔧 spaCy-анализ: '{anonymous_part}' + '{private_part}' (токены с пропуском пробелов)")
                     detections.append(detection)
-        
         return detections
 
     def _search_spaced_abbreviations(self, text: str) -> List[Dict[str, Any]]:
