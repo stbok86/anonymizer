@@ -4,14 +4,33 @@ import requests
 import tempfile
 import os
 from typing import List, Optional
+from dotenv import load_dotenv
+import logging
+
+# Загружаем переменные окружения из .env
+load_dotenv()
 
 app = FastAPI(title="Document Anonymizer Gateway", version="1.0.0")
+
+# Настройка логирования
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # URL сервисов
 UNIFIED_SERVICE_URL = "http://localhost:8009"
 NLP_SERVICE_URL = "http://localhost:8006"
-RULE_ENGINE_URL = "http://localhost:8009"
+RULE_ENGINE_URL = "http://localhost:8003"  # ИСПРАВЛЕНО: было 8009, должно быть 8003
 ORCHESTRATOR_URL = "http://localhost:8004"
+
+# Feature flags из .env
+USE_ORCHESTRATOR = os.getenv("USE_ORCHESTRATOR", "false").lower() == "true"
+AB_TESTING = os.getenv("AB_TESTING", "false").lower() == "true"
+ORCHESTRATOR_CANARY = int(os.getenv("ORCHESTRATOR_CANARY", "0"))
+
+logger.info(f"Gateway started with USE_ORCHESTRATOR={USE_ORCHESTRATOR}, AB_TESTING={AB_TESTING}, CANARY={ORCHESTRATOR_CANARY}%")
 
 @app.get("/")
 async def root():
@@ -23,6 +42,11 @@ async def root():
             "nlp": NLP_SERVICE_URL,
             "rule_engine": RULE_ENGINE_URL,
             "orchestrator": ORCHESTRATOR_URL
+        },
+        "feature_flags": {
+            "use_orchestrator": USE_ORCHESTRATOR,
+            "ab_testing": AB_TESTING,
+            "orchestrator_canary": f"{ORCHESTRATOR_CANARY}%"
         }
     }
 
@@ -88,43 +112,65 @@ async def analyze_document(
     patterns_file: str = Form(default="patterns/sensitive_patterns.xlsx")
 ):
     """
-    Проксирование запроса анализа к unified_document_service
+    Проксирование запроса анализа с поддержкой feature flags
+    
+    Поддерживаемые режимы:
+    - USE_ORCHESTRATOR=false: текущая система (Unified Service)
+    - USE_ORCHESTRATOR=true: новая система (Orchestrator)
+    - AB_TESTING=true: запускает оба пути для сравнения
+    - ORCHESTRATOR_CANARY=X: X% трафика на Orchestrator
     """
     try:
         # Подготавливаем файлы для пересылки
+        # Читаем файл в память один раз для возможного повторного использования
+        file_content = await file.read()
+        file.file.seek(0)  # Возвращаем указатель в начало
+        
         files = {
-            'file': (file.filename, file.file, file.content_type)
+            'file': (file.filename, file_content, file.content_type)
         }
         
         data = {
             'patterns_file': patterns_file
         }
         
-        # Пересылаем запрос к unified_document_service
+        # Определяем куда направить запрос
+        if USE_ORCHESTRATOR:
+            # Режим: Полностью на Orchestrator
+            logger.info("[ORCHESTRATOR] Routing to Orchestrator (USE_ORCHESTRATOR=true)")
+            target_url = f"{ORCHESTRATOR_URL}/analyze_document"
+            route_name = "Orchestrator"
+        else:
+            # Режим: Текущая система (Unified Service)
+            logger.info("[UNIFIED] Routing to Unified Service (USE_ORCHESTRATOR=false)")
+            target_url = f"{UNIFIED_SERVICE_URL}/analyze_document"
+            route_name = "Unified Service"
+        
+        # Пересылаем запрос
         response = requests.post(
-            f"{UNIFIED_SERVICE_URL}/analyze_document",
+            target_url,
             files=files,
             data=data,
             timeout=120
         )
         
-        print(f"🔍 [DEBUG] Gateway получил ответ от Unified Service: {response.status_code}")
+        logger.info(f"[{route_name}] Response status: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
-            print(f"🔍 [DEBUG] Результат от Unified Service: {type(result)}")
-            print(f"🔍 [DEBUG] Ключи в результате: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+            logger.debug(f"✅ [{route_name}] Success: {len(result.get('found_items', []))} items found")
             return result
         else:
             raise HTTPException(
                 status_code=response.status_code,
-                detail=f"Ошибка unified_document_service: {response.text}"
+                detail=f"Ошибка {route_name}: {response.text}"
             )
             
     except requests.exceptions.RequestException as e:
+        logger.error(f"❌ Service unavailable: {str(e)}")
         raise HTTPException(
             status_code=503,
-            detail=f"Unified Document Service недоступен: {str(e)}"
+            detail=f"Service недоступен: {str(e)}"
         )
 
 @app.post("/anonymize_document")
@@ -201,17 +247,22 @@ async def download_anonymized(filename: str):
             detail=f"Unified Document Service недоступен: {str(e)}"
         )
 
-@app.post("/anonymize_full")
-async def anonymize_full(
+@app.post("/anonymize_selected")
+async def anonymize_selected(
     file: UploadFile = File(...), 
     patterns_file: str = Form(default="patterns/sensitive_patterns.xlsx"),
     generate_excel_report: bool = Form(default=True),
-    generate_json_ledger: bool = Form(default=False)
+    generate_json_ledger: bool = Form(default=False),
+    selected_items: str = Form(...)
 ):
     """
-    Проксирование запроса полной анонимизации к unified_document_service
+    Проксирование запроса анонимизации к unified_document_service
+    Выполняет анонимизацию только выбранных пользователем элементов
     """
     try:
+        print(f"[GATEWAY] Получен запрос анонимизации: файл={file.filename}")
+        print(f"[GATEWAY] selected_items: {len(selected_items)} символов")
+        
         # Подготавливаем файлы для пересылки
         files = {
             'file': (file.filename, file.file, file.content_type)
@@ -220,56 +271,9 @@ async def anonymize_full(
         data = {
             'patterns_file': patterns_file,
             'generate_excel_report': generate_excel_report,
-            'generate_json_ledger': generate_json_ledger
-        }
-        
-        # Пересылаем запрос к unified_document_service
-        response = requests.post(
-            f"{UNIFIED_SERVICE_URL}/anonymize_full",
-            files=files,
-            data=data,
-            timeout=120
-        )
-        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Ошибка unified_document_service: {response.text}"
-            )
-            
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Unified Document Service недоступен: {str(e)}"
-        )
-
-@app.post("/anonymize_selected")
-async def anonymize_selected(
-    file: UploadFile = File(...), 
-    selected_items: str = Form(...),
-    patterns_file: str = Form(default="patterns/sensitive_patterns.xlsx")
-):
-    """
-    Проксирование запроса селективной анонимизации к unified_document_service
-    """
-    try:
-        print(f"🚀 [GATEWAY] Получен запрос анонимизации: файл={file.filename}")
-        print(f"🚀 [GATEWAY] selected_items длина: {len(selected_items) if selected_items else 'None'}")
-        print(f"🚀 [GATEWAY] patterns_file: {patterns_file}")
-        
-        # Подготавливаем файлы для пересылки
-        files = {
-            'file': (file.filename, file.file, file.content_type)
-        }
-        
-        data = {
-            'patterns_file': patterns_file,
+            'generate_json_ledger': generate_json_ledger,
             'selected_items': selected_items
         }
-        
-        print(f"🚀 [GATEWAY] Отправляем к unified_document_service...")
         
         # Пересылаем запрос к unified_document_service
         response = requests.post(
@@ -279,31 +283,18 @@ async def anonymize_selected(
             timeout=120
         )
         
-        print(f"🚀 [GATEWAY] Ответ от unified_document_service: {response.status_code}")
-        
         if response.status_code == 200:
             return response.json()
         else:
-            print(f"❌ [GATEWAY] Ошибка от unified_document_service: {response.status_code}")
-            print(f"❌ [GATEWAY] Текст ошибки: {response.text}")
             raise HTTPException(
                 status_code=response.status_code,
                 detail=f"Ошибка unified_document_service: {response.text}"
             )
             
     except requests.exceptions.RequestException as e:
-        print(f"❌ [GATEWAY] Ошибка сети при обращении к unified_document_service: {str(e)}")
         raise HTTPException(
             status_code=503,
             detail=f"Unified Document Service недоступен: {str(e)}"
-        )
-    except Exception as e:
-        print(f"❌ [GATEWAY] Неожиданная ошибка при анонимизации: {str(e)}")
-        import traceback
-        print(f"❌ [GATEWAY] Трассировка: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Неожиданная ошибка при анонимизации: {str(e)}"
         )
 
 

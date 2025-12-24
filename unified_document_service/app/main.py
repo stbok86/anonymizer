@@ -25,11 +25,11 @@ NLP_SERVICE_URL = "http://localhost:8006"
 # Middleware для логирования всех запросов
 @app.middleware("http")
 async def log_requests(request, call_next):
-    print(f"🌐 [REQUEST] {request.method} {request.url.path} от {request.client.host}")
+    print(f"[REQUEST] {request.method} {request.url.path} from {request.client.host}")
     if request.method == "POST":
-        print(f"🌐 [REQUEST] Content-Type: {request.headers.get('content-type', 'NOT_SET')}")
+        print(f"[REQUEST] Content-Type: {request.headers.get('content-type', 'NOT_SET')}")
     response = await call_next(request)
-    print(f"🌐 [RESPONSE] {response.status_code}")
+    print(f"[RESPONSE] {response.status_code}")
     return response
 
 @app.get("/health")
@@ -63,10 +63,45 @@ async def parse_docx_blocks(file: UploadFile = File(...)):
     finally:
         os.remove(tmp_path)
 
+@app.post("/parse_document")
+async def parse_document(file: UploadFile = File(...)):
+    """
+    ЭТАП 1: Парсинг документа и извлечение блоков
+    Для параллелизации через Orchestrator
+    """
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+    
+    try:
+        doc = Document(tmp_path)
+        builder = BlockBuilder()
+        blocks = builder.build_blocks(doc)
+        
+        # Сериализуем блоки (убираем element)
+        blocks_serialized = [
+            {k: v for k, v in b.items() if k != "element"}
+            for b in blocks
+        ]
+        
+        return JSONResponse(content={
+            "status": "success",
+            "blocks": blocks_serialized,
+            "blocks_count": len(blocks),
+            "filename": file.filename
+        })
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+    finally:
+        os.remove(tmp_path)
+
 @app.post("/analyze_document")
 async def analyze_document(file: UploadFile = File(...), patterns_file: str = "patterns/sensitive_patterns.xlsx"):
     """
-    Анализ документа: парсинг → поиск чувствительных данных (без анонимизации)
+    Анализ документа: парсинг -> поиск чувствительных данных (без анонимизации)
     """
     # print(f"🔍 [DEBUG] analyze_document вызван с patterns_file: {patterns_file}")
     
@@ -137,7 +172,7 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
                 nlp_response = requests.post(
                     f"{NLP_SERVICE_URL}/analyze",
                     json=nlp_data,
-                    timeout=60
+                    timeout=240  # 4 минуты на анализ (для больших документов с ~110 блоками)
                 )
                 
                 # print(f"🧠 [DEBUG] NLP Service ответил: {nlp_response.status_code}")
@@ -185,8 +220,8 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
         # Объединяем результаты БЕЗ дедупликации - каждый сервис отвечает за свои данные
         all_found_items = rule_engine_items + nlp_items
         
-        print(f"📊 [ANALYZE] Объединение результатов: Rule Engine={len(rule_engine_items)}, NLP Service={len(nlp_items)}, Итого={len(all_found_items)}")
-        print(f"💡 [INFO] Дедупликация отключена - каждый сервис обрабатывает свои типы данных")
+        print(f"[ANALYZE] Объединение результатов: Rule Engine={len(rule_engine_items)}, NLP Service={len(nlp_items)}, Итого={len(all_found_items)}")
+        print(f"[INFO] Дедупликация отключена - каждый сервис обрабатывает свои типы данных")
         
         return JSONResponse(content={
             "status": "success",
@@ -207,10 +242,113 @@ async def analyze_document(file: UploadFile = File(...), patterns_file: str = "p
     finally:
         os.remove(tmp_path)
 
+@app.post("/analyze_rule_engine")
+async def analyze_rule_engine(blocks: list, patterns_file: str = Form("patterns/sensitive_patterns.xlsx")):
+    """
+    ЭТАП 2a: Анализ блоков через Rule Engine
+    Для параллелизации через Orchestrator
+    """
+    try:
+        rule_engine = RuleEngineAdapter(patterns_file)
+        processed_blocks = rule_engine.apply_rules_to_blocks(blocks)
+        
+        # Собираем найденные элементы
+        rule_engine_items = []
+        for block in processed_blocks:
+            if 'sensitive_patterns' in block:
+                for pattern in block['sensitive_patterns']:
+                    found_item = {
+                        'block_id': block['block_id'],
+                        'category': pattern['category'],
+                        'original_value': pattern['original_value'],
+                        'position': pattern['position'],
+                        'confidence': pattern.get('confidence', 1.0),
+                        'method': 'regex',
+                        'source': 'Rule Engine',
+                        'block_text': block.get('text', block.get('content', 'Контекст недоступен'))
+                    }
+                    rule_engine_items.append(found_item)
+        
+        return JSONResponse(content={
+            "status": "success",
+            "found_items": rule_engine_items,
+            "total_items": len(rule_engine_items),
+            "blocks_processed": len(blocks)
+        })
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
+@app.post("/analyze_nlp")
+async def analyze_nlp(blocks: list):
+    """
+    ЭТАП 2b: Анализ блоков через NLP Service
+    Для параллелизации через Orchestrator
+    """
+    try:
+        nlp_items = []
+        
+        # Подготавливаем блоки для NLP Service
+        text_blocks = [
+            {
+                "content": block.get('text', block.get('content', '')),
+                "block_id": block.get('block_id', f'block_{i}'),
+                "block_type": block.get('type', 'text')
+            }
+            for i, block in enumerate(blocks)
+            if block.get('text') or block.get('content')
+        ]
+        
+        if text_blocks:
+            nlp_data = {
+                "blocks": text_blocks,
+                "options": {"confidence_threshold": 0.6}
+            }
+            
+            nlp_response = requests.post(
+                f"{NLP_SERVICE_URL}/analyze",
+                json=nlp_data,
+                timeout=240
+            )
+            
+            if nlp_response.status_code == 200:
+                nlp_result = nlp_response.json()
+                
+                if nlp_result.get('success', False) and 'detections' in nlp_result:
+                    nlp_counter = 0
+                    for detection in nlp_result['detections']:
+                        nlp_item = {
+                            'block_id': detection.get('block_id', f'nlp_block_{nlp_counter}'),
+                            'category': detection.get('category', 'NLP Detection'),
+                            'original_value': detection.get('original_value', ''),
+                            'position': detection.get('position', {}),
+                            'confidence': detection.get('confidence', 0.8),
+                            'method': detection.get('method', 'nlp_unknown'),
+                            'spacy_label': detection.get('spacy_label', ''),
+                            'source': 'NLP Service',
+                            'block_text': detection.get('context', detection.get('original_value', ''))
+                        }
+                        nlp_items.append(nlp_item)
+                        nlp_counter += 1
+        
+        return JSONResponse(content={
+            "status": "success",
+            "found_items": nlp_items,
+            "total_items": len(nlp_items),
+            "blocks_processed": len(blocks)
+        })
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
 @app.post("/anonymize_document")
 async def anonymize_document(file: UploadFile = File(...), patterns_file: str = "patterns/sensitive_patterns.xlsx"):
     """
-    Полная анонимизация документа: парсинг → поиск → замена с сохранением форматирования
+    Полная анонимизация документа: парсинг -> поиск -> замена с сохранением форматирования
     """
     # Сохраняем загруженный файл
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
@@ -269,6 +407,31 @@ async def anonymize_document(file: UploadFile = File(...), patterns_file: str = 
         return JSONResponse(content=response_data)
         
     except Exception as e:
+        # Временное логирование для отлова проблемного содержимого
+        import traceback, os
+        log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../anonymization_error_debug.log'))
+        print(f"[DEBUG] Writing anonymization error log to: {log_path}")
+        try:
+            with open(log_path, 'a', encoding='utf-8') as log_f:
+                log_f.write('\n--- Ошибка анонимизации ---\n')
+                log_f.write(f'Ошибка: {str(e)}\n')
+                log_f.write('Traceback:\n')
+                log_f.write(traceback.format_exc())
+                # Если есть переменные с содержимым, добавить их сюда
+                try:
+                    log_f.write(f'\nall_matches (preview): {str(all_matches)[:1000]}\n')
+                except Exception:
+                    pass
+                try:
+                    log_f.write(f'\nreport (preview): {str(report)[:1000]}\n')
+                except Exception:
+                    pass
+                try:
+                    log_f.write(f'\nresponse_data (preview): {str(response_data)[:1000]}\n')
+                except Exception:
+                    pass
+        except Exception as log_exc:
+            print(f"[ERROR] Failed to write anonymization error log: {log_exc}")
         return JSONResponse(
             status_code=500,
             content={"error": f"Ошибка анонимизации: {str(e)}"}
@@ -295,14 +458,15 @@ async def download_anonymized(filename: str):
             content={"error": "Файл не найден"}
         )
 
-@app.post("/anonymize_full")
-async def anonymize_full(file: UploadFile = File(...), 
+@app.post("/anonymize_selected")
+async def anonymize_selected(file: UploadFile = File(...), 
                         patterns_file: str = "patterns/sensitive_patterns.xlsx",
                         generate_excel_report: bool = True,
-                        generate_json_ledger: bool = True):
+                        generate_json_ledger: bool = True,
+                        selected_items: str = Form(...)):
     """
     ПОЛНЫЙ ЦИКЛ АНОНИМИЗАЦИИ с Excel отчетом и JSON журналом
-    Этап 2.4: Replacement Ledger и базовый Anonymize
+    Выполняет анонимизацию только выбранных пользователем элементов (selected_items обязателен)
     """
     # Создаем временные пути
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_input:
@@ -321,12 +485,25 @@ async def anonymize_full(file: UploadFile = File(...),
         # Инициализируем полный анонимизатор
         anonymizer = FullAnonymizer(patterns_path=patterns_file)
         
-        # Выполняем полный цикл анонимизации
+        # Парсим selected_items
+        try:
+            import json
+            selected_items_list = json.loads(selected_items)
+            print(f"[UNIFIED_SERVICE] Получен selected_items: {len(selected_items_list)} элементов")
+        except json.JSONDecodeError as e:
+            print(f"[UNIFIED_SERVICE] Ошибка парсинга selected_items: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Некорректный формат selected_items: {str(e)}"
+            )
+        
+        # Выполняем анонимизацию выбранных элементов
         result = anonymizer.anonymize_document(
             input_path=input_path,
             output_path=output_path,
             excel_report_path=excel_path,
-            json_ledger_path=json_path
+            json_ledger_path=json_path,
+            selected_items=selected_items_list
         )
         
         if result['status'] == 'success':
@@ -386,91 +563,6 @@ async def anonymize_full(file: UploadFile = File(...),
         if os.path.exists(input_path):
             os.remove(input_path)
 
-@app.post("/anonymize_selected")
-async def anonymize_selected(file: UploadFile = File(...), selected_items: str = Form(None)):
-    """
-    Селективная анонимизация документа на основе выбранных пользователем элементов
-    """
-    print(f"🔧 [ANONYMIZE] Запрос анонимизации файла: {file.filename}")
-    # print(f"🔧 [ANONYMIZE] Получено selected_items: {selected_items}")
-    
-    if not selected_items:
-        print(f"❌ [ANONYMIZE] Нет selected_items")
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "message": "Не указаны элементы для анонимизации"}
-        )
-    
-    # Сохраняем загруженный файл
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-        shutil.copyfileobj(file.file, tmp)
-        tmp_path = tmp.name
-    
-    # Создаем путь для результата
-    output_path = tmp_path.replace(".docx", "_anonymized.docx")
-    
-    try:
-        # Парсим выбранные элементы из JSON
-        import json
-        selected_items_list = json.loads(selected_items)
-        
-        # print(f"🔧 [ANONYMIZE] Парсинг JSON успешен: {len(selected_items_list)} элементов")
-        # print(f"🔧 [ANONYMIZE] Первые 3 элемента: {selected_items_list[:3] if len(selected_items_list) > 3 else selected_items_list}")
-        
-        # Инициализируем полный анонимизатор
-        anonymizer = FullAnonymizer()
-        
-        print(f"🔧 [ANONYMIZE] Вызываем anonymize_selected_items...")
-        
-        # Выполняем селективную анонимизацию
-        result = anonymizer.anonymize_selected_items(
-            input_path=tmp_path,
-            output_path=output_path,
-            selected_items=selected_items_list
-        )
-        
-        print(f"🔧 [ANONYMIZE] Результат анонимизации: {result.get('status', 'NO_STATUS')}")
-        
-        if result['status'] == 'success':
-            # Кодируем файл в base64 для прямого скачивания
-            with open(output_path, 'rb') as f:
-                file_base64 = base64.b64encode(f.read()).decode('utf-8')
-            
-            result['anonymized_document_base64'] = file_base64
-            result['download_url'] = f"/download_file/{os.path.basename(output_path)}"
-            result['filename'] = file.filename.replace('.docx', '_anonymized.docx')
-            
-            return JSONResponse(content=result)
-        else:
-            return JSONResponse(
-                status_code=500,
-                content=result
-            )
-            
-    except json.JSONDecodeError as e:
-        print(f"❌ [ANONYMIZE] Ошибка парсинга JSON: {str(e)}")
-        print(f"❌ [ANONYMIZE] selected_items: {selected_items}")
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "message": "Некорректный формат данных selected_items"}
-        )
-    except Exception as e:
-        print(f"❌ [ANONYMIZE] Ошибка селективной анонимизации: {str(e)}")
-        print(f"❌ [ANONYMIZE] Тип ошибки: {type(e).__name__}")
-        import traceback
-        print(f"❌ [ANONYMIZE] Traceback: {traceback.format_exc()}")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": f"Ошибка селективной анонимизации: {str(e)}"}
-        )
-    finally:
-        # Очищаем временные файлы
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        if os.path.exists(output_path):
-            # Файл удалится автоматически через некоторое время или при перезапуске
-            pass
-
 @app.get("/download_file/{filename}")
 async def download_file(filename: str):
     """Универсальное скачивание файлов (DOCX, Excel, JSON)"""
@@ -528,9 +620,9 @@ async def deanonymize_document(
         JSON с деанонимизированным документом в base64 и статистикой замен
     """
     
-    print(f"🔓 [DEANONYMIZATION] Начало процесса деанонимизации")
-    print(f"📄 Документ: {document.filename}")
-    print(f"📊 Таблица замен: {replacement_table.filename}")
+    print(f"[DEANONYMIZATION] Начало процесса деанонимизации")
+    print(f"[FILE] Документ: {document.filename}")
+    print(f"[FILE] Таблица замен: {replacement_table.filename}")
     
     doc_temp_path = None
     table_temp_path = None
@@ -551,9 +643,9 @@ async def deanonymize_document(
             table_temp.write(table_content)
             table_temp_path = table_temp.name
         
-        print(f"✅ Временные файлы созданы")
-        print(f"📄 Документ: {doc_temp_path}")
-        print(f"📊 Таблица: {table_temp_path}")
+        print(f"[SUCCESS] Временные файлы созданы")
+        print(f"[FILE] Документ: {doc_temp_path}")
+        print(f"[FILE] Таблица: {table_temp_path}")
         
         # Выполняем деанонимизацию
         from document_deanonymizer import DocumentDeanonymizer
@@ -562,8 +654,8 @@ async def deanonymize_document(
         result = deanonymizer.deanonymize_document(doc_temp_path, table_temp_path)
         
         if result['success']:
-            print(f"🎉 Деанонимизация успешно выполнена")
-            print(f"📊 Статистика: {result['statistics']}")
+            print(f"[SUCCESS] Деанонимизация успешно выполнена")
+            print(f"[STATS] Статистика: {result['statistics']}")
             
             # Кодируем деанонимизированный документ в base64
             output_path = result['output_path']
@@ -594,7 +686,7 @@ async def deanonymize_document(
             return JSONResponse(content=response_data)
         else:
             error_msg = result.get('error', 'Неизвестная ошибка при деанонимизации')
-            print(f"❌ Ошибка деанонимизации: {error_msg}")
+            print(f"[ERROR] Ошибка деанонимизации: {error_msg}")
             return JSONResponse(
                 status_code=400,
                 content={
@@ -606,7 +698,7 @@ async def deanonymize_document(
             
     except ImportError as e:
         error_msg = f"Модуль деанонимизации не найден: {str(e)}"
-        print(f"❌ {error_msg}")
+        print(f"[ERROR] {error_msg}")
         return JSONResponse(
             status_code=500,
             content={
@@ -617,7 +709,7 @@ async def deanonymize_document(
         )
     except Exception as e:
         error_msg = f"Внутренняя ошибка при деанонимизации: {str(e)}"
-        print(f"❌ {error_msg}")
+        print(f"[ERROR] {error_msg}")
         return JSONResponse(
             status_code=500,
             content={

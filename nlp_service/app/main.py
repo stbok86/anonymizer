@@ -15,6 +15,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from nlp_adapter import NLPAdapter
+from batch_nlp_adapter import BatchNLPAdapter
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +25,7 @@ app = FastAPI(title="NLP Service", version="1.0.0")
 
 # Глобальный экземпляр NLP адаптера
 nlp_adapter = None
+batch_nlp_adapter = None
 
 # Pydantic модели для API
 class TextBlock(BaseModel):
@@ -59,18 +61,20 @@ class AnalyzeResponse(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """Инициализация сервиса при запуске"""
-    global nlp_adapter
+    global nlp_adapter, batch_nlp_adapter
     
     try:
-        logger.info("🚀 Инициализация NLP Service...")
+        logger.info("Initializing NLP Service...")
         
-        # Создаем NLP адаптер
-        nlp_adapter = NLPAdapter()
+        # Создаем батч-адаптер (он наследует от NLPAdapter)
+        batch_nlp_adapter = BatchNLPAdapter()
+        # Для обратной совместимости также сохраняем в nlp_adapter
+        nlp_adapter = batch_nlp_adapter
         
-        logger.info("✅ NLP Service успешно инициализирован")
+        logger.info("NLP Service initialized successfully with batch processing support")
         
     except Exception as e:
-        logger.error(f"❌ Ошибка инициализации NLP Service: {e}")
+        logger.error(f"Failed to initialize NLP Service: {e}")
         raise e
 
 @app.get("/healthz")
@@ -93,64 +97,59 @@ async def analyze_blocks(request: AnalyzeRequest):
     """
     Анализирует текстовые блоки на предмет чувствительных данных
     
+    Использует оптимизированную батч-обработку для повышения производительности
+    
     Args:
         request: Запрос с блоками для анализа
         
     Returns:
         Результаты анализа с обнаруженными данными
     """
-    global nlp_adapter
+    global batch_nlp_adapter
     
-    if nlp_adapter is None:
+    if batch_nlp_adapter is None:
         raise HTTPException(
             status_code=503, 
             detail="NLP adapter not initialized"
         )
     
     try:
-        logger.info(f"📝 Анализ {len(request.blocks)} блоков")
+        logger.info(f"Processing {len(request.blocks)} blocks with batch optimization")
         
-        all_detections = []
-        blocks_processed = 0
+        # Используем батч-обработку для ускорения
+        # Преобразуем Pydantic модели в обычные словари
+        blocks_data = [
+            {
+                'content': block.content,
+                'block_id': block.block_id,
+                'block_type': block.block_type
+            }
+            for block in request.blocks
+        ]
         
-        for block in request.blocks:
-            try:
-                # Логируем содержимое блока для диагностики
-                logger.info(f"🔍 Анализируем блок {block.block_id}: '{block.content[:100]}...' (длина: {len(block.content)})")
-                
-                # Анализируем содержимое блока
-                block_detections = nlp_adapter.find_sensitive_data(block.content)
-                
-                # Детальное логирование результатов
-                if block_detections:
-                    logger.info(f"✅ Блок {block.block_id}: найдено {len(block_detections)} обнаружений")
-                    for det in block_detections[:3]:  # Первые 3 для экономии места
-                        logger.info(f"   - {det['category']}: '{det['original_value']}' (conf: {det['confidence']})")
-                else:
-                    logger.warning(f"⚠️ Блок {block.block_id}: НЕ НАЙДЕНО обнаружений")
-                
-                # Добавляем block_id к каждому обнаружению
-                for detection in block_detections:
-                    detection['block_id'] = block.block_id
-                    all_detections.append(Detection(**detection))
-                
-                blocks_processed += 1
-                
-            except Exception as e:
-                logger.error(f"❌ Ошибка анализа блока {block.block_id}: {e}")
-                continue
+        # Получаем размер батча из опций или используем дефолт
+        batch_size = request.options.get('batch_size', 50)
         
-        logger.info(f"✅ Анализ завершен: {len(all_detections)} обнаружений в {blocks_processed} блоках")
+        # Батч-обработка
+        all_detections_list = batch_nlp_adapter.find_sensitive_data_batch(
+            blocks_data, 
+            batch_size=batch_size
+        )
+        
+        # Конвертируем в Pydantic модели
+        all_detections = [Detection(**det) for det in all_detections_list]
+        
+        logger.info(f"Found {len(all_detections)} total detections across {len(request.blocks)} blocks")
         
         return AnalyzeResponse(
             success=True,
             detections=all_detections,
             total_detections=len(all_detections),
-            blocks_processed=blocks_processed
+            blocks_processed=len(request.blocks)
         )
         
     except Exception as e:
-        logger.error(f"❌ Ошибка анализа: {e}")
+        logger.error(f"Error during batch analysis: {e}", exc_info=True)
         return AnalyzeResponse(
             success=False,
             detections=[],
@@ -234,6 +233,46 @@ async def get_categories():
         "total": len(categories)
     }
 
+@app.get("/cache/stats")
+async def get_cache_stats():
+    """Возвращает статистику кеша детекций"""
+    global batch_nlp_adapter
+    
+    if batch_nlp_adapter is None:
+        raise HTTPException(
+            status_code=503,
+            detail="NLP adapter not initialized"
+        )
+    
+    try:
+        stats = batch_nlp_adapter.detection_cache.get_stats()
+        return {
+            "cache_stats": stats,
+            "enabled": True
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/cache/clear")
+async def clear_cache():
+    """Очищает кеш детекций"""
+    global batch_nlp_adapter
+    
+    if batch_nlp_adapter is None:
+        raise HTTPException(
+            status_code=503,
+            detail="NLP adapter not initialized"
+        )
+    
+    try:
+        batch_nlp_adapter.detection_cache.clear()
+        return {
+            "success": True,
+            "message": "Cache cleared successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/test")
 async def test_analysis(text: str):
     """Тестовый эндпоинт для быстрой проверки анализа текста"""
@@ -255,9 +294,14 @@ async def test_analysis(text: str):
         }
         
     except Exception as e:
-        logger.error(f"Ошибка тестового анализа: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8006)
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=8006,
+        timeout_keep_alive=300,  # 5 минут keep-alive
+        timeout_graceful_shutdown=30  # 30 секунд на graceful shutdown
+    )

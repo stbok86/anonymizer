@@ -49,8 +49,8 @@ class DocumentDeanonymizer:
         """
         
         try:
-            logger.info(f"🔓 Начало деанонимизации документа: {document_path}")
-            logger.info(f"📊 Таблица замен: {table_path}")
+            logger.info(f"Начало деанонимизации документа: {document_path}")
+            logger.info(f"[INFO] Таблица замен: {table_path}")
             
             # Загружаем таблицу соответствий
             if not self._load_replacement_table(table_path):
@@ -88,13 +88,13 @@ class DocumentDeanonymizer:
                 'message': f'Успешно деанонимизировано: {self.statistics["successful_replacements"]} из {self.statistics["total_uuids_found"]} UUID'
             }
             
-            logger.info(f"🎉 Деанонимизация завершена успешно")
-            logger.info(f"📊 Статистика: {self.statistics}")
+            logger.info(f"Деанонимизация завершена успешно")
+            logger.info(f"[STATS] Статистика: {self.statistics}")
             
             return result
             
         except Exception as e:
-            logger.error(f"❌ Ошибка при деанонимизации: {str(e)}")
+            logger.error(f"[ERROR] Ошибка при деанонимизации: {str(e)}")
             return {
                 'success': False,
                 'error': f'Внутренняя ошибка: {str(e)}',
@@ -111,11 +111,11 @@ class DocumentDeanonymizer:
             elif table_path.endswith('.csv'):
                 df = pd.read_csv(table_path)
             else:
-                logger.error(f"❌ Неподдерживаемый формат таблицы: {table_path}")
+                logger.error(f"[ERROR] Неподдерживаемый формат таблицы: {table_path}")
                 return False
             
-            logger.info(f"📋 Загружена таблица размером: {len(df)} строк")
-            logger.info(f"📋 Колонки: {list(df.columns)}")
+            logger.info(f"Загружена таблица размером: {len(df)} строк")
+            logger.info(f"Колонки: {list(df.columns)}")
             
             # Ищем нужные колонки (различные варианты названий)
             uuid_column = self._find_column(df, [
@@ -130,16 +130,16 @@ class DocumentDeanonymizer:
             ])
             
             if not uuid_column:
-                logger.error("❌ Не найдена колонка с UUID")
+                logger.error("[ERROR] Не найдена колонка с UUID")
                 return False
             
             if not original_column:
-                logger.error("❌ Не найдена колонка с оригинальными данными")
+                logger.error("[ERROR] Не найдена колонка с оригинальными данными")
                 return False
             
-            logger.info(f"✅ Найдены колонки: UUID='{uuid_column}', Original='{original_column}'")
+            logger.info(f"[SUCCESS] Найдены колонки: UUID='{uuid_column}', Original='{original_column}'")
             
-            # Строим маппинг UUID → оригинальное значение
+            # Строим маппинг UUID -> оригинальное значение
             for _, row in df.iterrows():
                 uuid_val = str(row[uuid_column]).strip()
                 original_val = str(row[original_column]).strip()
@@ -147,18 +147,18 @@ class DocumentDeanonymizer:
                 if uuid_val and original_val and uuid_val != 'nan' and original_val != 'nan':
                     self.replacement_mapping[uuid_val] = original_val
             
-            logger.info(f"📊 Загружено {len(self.replacement_mapping)} соответствий для деанонимизации")
+            logger.info(f"[INFO] Загружено {len(self.replacement_mapping)} соответствий для деанонимизации")
             
             # Показываем примеры для проверки
             if len(self.replacement_mapping) > 0:
                 sample_items = list(self.replacement_mapping.items())[:3]
                 for uuid_val, original_val in sample_items:
-                    logger.info(f"   📝 {uuid_val[:8]}... → '{original_val}'")
+                    logger.info(f"   [SAMPLE] {uuid_val[:8]}... -> '{original_val}'")
             
             return len(self.replacement_mapping) > 0
             
         except Exception as e:
-            logger.error(f"❌ Ошибка при загрузке таблицы: {str(e)}")
+            logger.error(f"[ERROR] Ошибка при загрузке таблицы: {str(e)}")
             return False
     
     def _find_column(self, df: pd.DataFrame, possible_names: List[str]) -> Optional[str]:
@@ -172,7 +172,7 @@ class DocumentDeanonymizer:
     def _process_document(self, document: Document):
         """Обрабатывает документ и заменяет UUID на оригинальные данные"""
         
-        logger.info("🔄 Начинаем обработку параграфов документа")
+        logger.info("Начинаем обработку параграфов документа")
         
         # Обрабатываем основной текст документа
         for paragraph in document.paragraphs:
@@ -194,7 +194,7 @@ class DocumentDeanonymizer:
                 for paragraph in section.footer.paragraphs:
                     self._process_paragraph(paragraph)
         
-        logger.info(f"✅ Обработка документа завершена")
+        logger.info(f"[SUCCESS] Обработка документа завершена")
     
     def _process_paragraph(self, paragraph):
         """Обрабатывает параграф и заменяет UUID в тексте"""
@@ -208,7 +208,7 @@ class DocumentDeanonymizer:
         if not uuids_in_text:
             return
         
-        logger.debug(f"🔍 Найдено UUID в параграфе: {len(uuids_in_text)}")
+        logger.debug(f"[DEBUG] Найдено UUID в параграфе: {len(uuids_in_text)}")
         
         # Заменяем UUID на оригинальные данные, сохраняя форматирование
         for run in paragraph.runs:
@@ -218,7 +218,7 @@ class DocumentDeanonymizer:
                 
                 if modified_text != original_text:
                     run.text = modified_text
-                    logger.debug(f"🔄 Замена в run: '{original_text[:50]}...' → '{modified_text[:50]}...'")
+                    logger.debug(f"[DEBUG] Замена в run: '{original_text[:50]}...' -> '{modified_text[:50]}...'")
     
     def _process_table(self, table):
         """Обрабатывает таблицу и заменяет UUID в ячейках"""
@@ -261,7 +261,7 @@ class DocumentDeanonymizer:
                     'status': 'success'
                 })
                 
-                logger.debug(f"✅ Замена: {uuid_str} → '{original_value}'")
+                logger.debug(f"[SUCCESS] Замена: {uuid_str} -> '{original_value}'")
                 return original_value
             else:
                 self.statistics['failed_replacements'] += 1
@@ -274,7 +274,7 @@ class DocumentDeanonymizer:
                     'reason': 'UUID не найден в таблице замен'
                 })
                 
-                logger.warning(f"⚠️ UUID не найден в таблице: {uuid_str}")
+                logger.warning(f"[WARNING] UUID не найден в таблице: {uuid_str}")
                 return uuid_str  # Оставляем без изменений
         
         # Выполняем замену
@@ -315,11 +315,11 @@ class DocumentDeanonymizer:
                 if not details_df.empty:
                     details_df.to_excel(writer, sheet_name='Детали замен', index=False)
             
-            logger.info(f"📊 Создан отчет о деанонимизации: {report_path}")
+            logger.info(f"[INFO] Создан отчет о деанонимизации: {report_path}")
             return report_path
             
         except Exception as e:
-            logger.error(f"❌ Ошибка при создании отчета: {str(e)}")
+            logger.error(f"[ERROR] Ошибка при создании отчета: {str(e)}")
             return None
     
     def validate_uuid_format(self, uuid_str: str) -> bool:

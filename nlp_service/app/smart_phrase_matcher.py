@@ -106,7 +106,7 @@ class SmartPhraseMatcher:
                             'is_partial': pattern_info.get('is_partial', False)
                         }
                 except Exception as e:
-                    print(f"⚠️ Ошибка при создании паттерна '{pattern_text}': {e}")
+                    print(f"[WARNING] Ошибка при создании паттерна '{pattern_text}': {e}")
                     continue
             
             if pattern_docs:
@@ -182,7 +182,7 @@ class SmartPhraseMatcher:
                     all_matches.append(smart_match)
                     
             except Exception as e:
-                print(f"⚠️ Ошибка при поиске совпадений длины {length}: {e}")
+                print(f"[WARNING] Ошибка при поиске совпадений длины {length}: {e}")
                 continue
         
         # Фильтруем и объединяем совпадения

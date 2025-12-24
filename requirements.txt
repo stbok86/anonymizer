@@ -1,0 +1,41 @@
+# ==============================================================================
+# ОБЪЕДИНЕННЫЕ ЗАВИСИМОСТИ ДЛЯ ВСЕХ СЕРВИСОВ
+# Document Anonymizer Project - Единое виртуальное окружение
+# ==============================================================================
+
+# --- Web Frameworks ---
+fastapi==0.119.1
+uvicorn[standard]
+streamlit
+
+# --- HTTP Clients ---
+requests
+httpx
+python-multipart
+
+# --- Document Processing ---
+python-docx
+lxml
+openpyxl
+pandas
+
+# --- NLP & Text Processing ---
+spacy>=3.0.0
+pymorphy3
+pymorphy3-dicts-ru
+
+# --- Data Validation ---
+pydantic
+typing-extensions
+
+# --- Utilities ---
+python-dotenv
+regex
+
+# --- Development ---
+colorama
+
+# ==============================================================================
+# ПРИМЕЧАНИЕ: После установки необходимо загрузить spaCy модель:
+# python -m spacy download ru_core_news_sm
+# ==============================================================================

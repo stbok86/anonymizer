@@ -132,16 +132,17 @@ def step1_upload_document():
     
     if uploaded_file:
         st.session_state.uploaded_file = uploaded_file
-        st.success(f"✅ Файл загружен: {uploaded_file.name}")
-        
-        # Кнопка анализа
-        if st.button("🔍 Анализировать документ", type="primary", key="step1_analyze"):
-            with st.spinner("🔄 Анализируем документ..."):
-                found_data = analyze_document_api(uploaded_file, patterns_file)
-                if found_data is not None:
-                    st.session_state.found_data = found_data
-                    st.session_state.current_step = 2
-                    st.rerun()
+        # Уведомление об успешной загрузке файла скрыто по требованию
+        # Кнопка анализа справа
+        col1, col2 = st.columns([6, 1])
+        with col2:
+            if st.button("Анализировать документ", type="primary", key="step1_analyze"):
+                with st.spinner("Анализируем документ..."):
+                    found_data = analyze_document_api(uploaded_file, patterns_file)
+                    if found_data is not None:
+                        st.session_state.found_data = found_data
+                        st.session_state.current_step = 2
+                        st.rerun()
     
     # Секция деанонимизации
     display_deanonymization_section()
@@ -257,6 +258,7 @@ def step2_review_findings():
         df = df.rename(columns={'Значение': 'Заменяемое значение'})
         edited_df = st.data_editor(
             df,
+            num_rows="dynamic",  # Разрешить отображение всех строк
             column_config={
                 'ID': st.column_config.NumberColumn('№', disabled=True, width="extraSmall"),
                 'Источник': st.column_config.TextColumn('Источник', disabled=True, width="small"),
@@ -313,11 +315,17 @@ def step2_review_findings():
         </style>
         """, unsafe_allow_html=True)
         
-        # Обновляем данные в session_state на основе изменений в таблице
-        for i, row in edited_df.iterrows():
-            if i < len(st.session_state.found_data):
-                st.session_state.found_data[i]['approved'] = row['Заменить']
-                st.session_state.found_data[i]['comment'] = row['Комментарий']
+        # Обновляем данные в session_state на основе изменений в таблице мгновенно
+        if st.session_state.get('found_data_editor_last', None) is None:
+            st.session_state.found_data_editor_last = edited_df.copy()
+        changed = not edited_df.equals(st.session_state.found_data_editor_last)
+        if changed:
+            for i, row in edited_df.iterrows():
+                if i < len(st.session_state.found_data):
+                    st.session_state.found_data[i]['approved'] = row['Заменить']
+                    st.session_state.found_data[i]['comment'] = row['Комментарий']
+            st.session_state.found_data_editor_last = edited_df.copy()
+            st.rerun()
     
     # Элементы управления массовыми операциями
     col1, col2, col3 = st.columns([6, 1, 1])
@@ -338,16 +346,27 @@ def step2_review_findings():
     st.markdown("---")
     selected_count = sum(1 for item in found_data if item.get('approved', False))
     
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2, col3 = st.columns([6, 1, 1])
     with col1:
-        if st.button("⬅️ Назад к загрузке", type="secondary", key="step2_back"):
+        if st.button("← Назад к загрузке", type="secondary", key="step2_back"):
             st.session_state.current_step = 1
             st.rerun()
     with col2:
         st.metric("Выбрано для замены", f"{selected_count}/{len(found_data)}")
     with col3:
-        if st.button("🔒 Подтвердить анонимизацию", type="primary", disabled=(selected_count == 0), key="step2_confirm"):
-            with st.spinner("🔄 Выполняем анонимизацию и генерируем файлы..."):
+        st.markdown("""
+        <style>
+        /* Streamlit 1.52+ unique selector for button by text */
+        div[data-testid="stButton"] button:where(:not([aria-disabled])) {
+            white-space: nowrap !important;
+            min-width: 220px !important;
+            max-width: 100% !important;
+            font-size: 16px !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        if st.button("Подтвердить анонимизацию", type="primary", disabled=(selected_count == 0), key="step2_confirm"):
+            with st.spinner("Выполняем анонимизацию и генерируем файлы..."):
                 # Получаем одобренные пользователем элементы для анонимизации
                 approved_items = [item for item in st.session_state.found_data if item.get('approved', False)]
                 
@@ -359,7 +378,8 @@ def step2_review_findings():
                     anonymized_files = anonymize_document_full_api(
                         st.session_state.uploaded_file, 
                         approved_items,
-                        st.session_state.patterns_file
+                        st.session_state.patterns_file,
+                        total_found=len(st.session_state.found_data)  # ✅ Передаем общее количество найденных
                     )
                     
                     # ❌ УДАЛЕНО: Генерация Excel на frontend (генерировал случайные UUID)
@@ -387,9 +407,9 @@ def step3_download_results():
     .stExpander { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
     </style>
     """, unsafe_allow_html=True)
-    st.markdown("## 📥 Шаг 3: Результаты анонимизации")
+    st.markdown("## Шаг 3: Результаты анонимизации")
     
-    st.success("✅ Документ успешно анонимизирован!")
+    st.success("Документ успешно анонимизирован!")
     
     # Отображаем статистику анонимизации
     if 'anonymization_stats' in st.session_state and st.session_state.anonymization_stats:
@@ -399,28 +419,25 @@ def step3_download_results():
         col1, col2 = st.columns(2)
         
         with col1:
-            st.metric(
-                label="🔍 Найдено чувствительных данных",
-                value=f"{stats.get('total_found', 0)} элементов"
-            )
+                st.metric(
+                    label="Найдено чувствительных данных",
+                    value=f"{stats.get('total_found', 0)} элементов"
+                )
         
         with col2:
-            st.metric(
-                label="🔒 Анонимизировано чувствительных данных", 
-                value=f"{stats.get('replacements_applied', stats.get('total_anonymized', 0))} элементов"
-            )
+                st.metric(
+                    label="Анонимизировано чувствительных данных", 
+                    value=f"{stats.get('replacements_applied', stats.get('total_anonymized', 0))} элементов"
+                )
         
         # Дополнительная информация о замене
-        if stats.get('replacement_stats', {}):
-            replacement_stats = stats['replacement_stats']
-            if replacement_stats.get('total_replacements', 0) > 0:
-                st.info(f"✅ Выполнено замен: {replacement_stats.get('total_replacements', 0)}")
+        # Уведомление 'Выполнено замен: ...' скрыто по требованию
         
         st.markdown("---")
     
     # Проверяем, есть ли готовые файлы
     if st.session_state.anonymized_files:
-        st.markdown("### 📁 Файлы готовы для скачивания:")
+        st.markdown("### Файлы для скачивания:")
         
         # Разделяем файлы по типу для отображения конкретных кнопок
         anonymized_doc = None
@@ -432,34 +449,31 @@ def step3_download_results():
             elif file_info['type'] == 'replacements':
                 replacements_table = file_info
         
-        # Создаем две колонки для кнопок
-        col1, col2 = st.columns(2)
-        
-        with col1:
+        # Создаем две колонки слева для кнопок
+        col_doc, col_repl, col_spacer = st.columns([2, 1, 5])
+
+        with col_doc:
             if anonymized_doc:
                 st.download_button(
-                    label="📄 Скачать анонимизированный документ",
+                    label="Скачать анонимизированный документ",
                     data=anonymized_doc['data'],
                     file_name=anonymized_doc['filename'],
                     mime=anonymized_doc['mime'],
                     key="download_document",
-                    width="stretch"
+                    type="primary",
+                    use_container_width=True
                 )
-            else:
-                st.info("📄 Анонимизированный документ не готов")
-        
-        with col2:
+        with col_repl:
             if replacements_table:
                 st.download_button(
-                    label="📋 Скачать таблицу замен",
+                    label="Скачать таблицу замен",
                     data=replacements_table['data'],
                     file_name=replacements_table['filename'],
                     mime=replacements_table['mime'],
                     key="download_replacements",
-                    width="stretch"
+                    type="primary",
+                    use_container_width=True
                 )
-            else:
-                st.info("📋 Таблица замен не готова")
     else:
         st.warning("⚠️ Файлы не готовы. Вернитесь на шаг 2 и подтвердите анонимизацию.")
     
@@ -479,22 +493,20 @@ def analyze_document_api(uploaded_file, patterns_file):
     
     # Проверяем доступность API
     progress_bar = st.progress(0)
-    st.info("🔗 Проверяем подключение к Gateway...")
-    
+    # Уведомления о подключении к Gateway и отправке документа скрыты по требованию
     try:
         response = requests.get(f"{API_BASE_URL}/health", timeout=5)
         if response.status_code != 200:
             st.error("❌ Gateway недоступен")
             progress_bar.empty()
             return None
-        st.success("✅ Gateway доступен")
+        # st.success("✅ Gateway доступен")  # Скрыто
     except requests.exceptions.RequestException as e:
         st.error(f"❌ Ошибка подключения к Gateway: {str(e)}")
         progress_bar.empty()
         return None
-    
     progress_bar.progress(20)
-    st.info("� Отправляем документ на анализ...")
+    # st.info("� Отправляем документ на анализ...")  # Скрыто
     
     try:
         # Подготавливаем файлы для отправки
@@ -508,14 +520,14 @@ def analyze_document_api(uploaded_file, patterns_file):
         }
         
         progress_bar.progress(40)
-        st.info("🔍 Выполняем анализ документа...")
+        # st.info("🔍 Выполняем анализ документа...")  # Скрыто по требованию
         
         # Отправляем запрос на анализ (только анализ, без анонимизации)
         response = requests.post(
             f"{API_BASE_URL}/analyze_document", 
             files=files,
             data=data,
-            timeout=60
+            timeout=120  # 2 минуты на анализ
         )
         
         progress_bar.progress(70)
@@ -585,7 +597,7 @@ def analyze_document_api(uploaded_file, patterns_file):
         return None
 
 
-def anonymize_document_full_api(uploaded_file, approved_items, patterns_file):
+def anonymize_document_full_api(uploaded_file, approved_items, patterns_file, total_found=None):
     """Полная анонимизация документа через HTTP API с генерацией файлов для скачивания"""
     
     try:
@@ -597,16 +609,16 @@ def anonymize_document_full_api(uploaded_file, approved_items, patterns_file):
         data = {
             'patterns_file': patterns_file,
             'generate_excel_report': 'true',  # ✅ ВКЛЮЧАЕМ генерацию Excel на backend
-            'generate_json_ledger': 'true'     # ✅ ВКЛЮЧАЕМ генерацию JSON Ledger
+            'generate_json_ledger': 'true',     # ✅ ВКЛЮЧАЕМ генерацию JSON Ledger
+            'selected_items': json.dumps(approved_items)  # ✅ Передаем выбранные элементы
         }
         
-        # 🎯 ИСПОЛЬЗУЕМ /anonymize_full вместо /anonymize_selected
-        # Этот endpoint генерирует правильные UUID через backend
+        # 🎯 Отправляем выбранные пользователем элементы на анонимизацию
         response = requests.post(
-            f"{API_BASE_URL}/anonymize_full",  # ✅ ПОЛНАЯ анонимизация с корректными UUID
+            f"{API_BASE_URL}/anonymize_selected",  # ✅ Анонимизация только выбранных элементов
             files=files,
             data=data,
-            timeout=120
+            timeout=240  # 4 минуты на анонимизацию
         )
         
         if response.status_code == 200:
@@ -614,7 +626,7 @@ def anonymize_document_full_api(uploaded_file, approved_items, patterns_file):
             
             # Сохраняем статистику анонимизации в session_state
             st.session_state.anonymization_stats = {
-                'total_found': len(approved_items),  # Количество найденных элементов (выбранных пользователем)
+                'total_found': total_found if total_found is not None else len(approved_items),  # ✅ Общее количество найденных
                 'total_anonymized': result.get('statistics', {}).get('total_replacements', 0),  # Фактически замененных
                 'replacement_stats': result.get('statistics', {}),  # Детальная статистика замен
                 'replacements_applied': result.get('statistics', {}).get('total_replacements', 0)
@@ -686,21 +698,21 @@ def display_deanonymization_section():
     st.markdown("### Выбор документов для восстановления")
     st.markdown("**Восстановление оригинальных данных из ранее анонимизированного документа**")
     
-    with st.expander("ℹ️ Как работает деанонимизация", expanded=False):
+    with st.expander("Как работает деанонимизация", expanded=False):
         st.markdown("""
-        **🎯 Задача:** Заменить UUID обратно на оригинальные чувствительные данные
-        
-        **📋 Что нужно:**
+        **Задача:** Заменить UUID обратно на оригинальные чувствительные данные
+
+        **Что нужно:**
         1. **Анонимизированный документ** (.docx) - документ с UUID вместо чувствительных данных
         2. **Таблица замен** (.xlsx или .csv) - соответствие UUID ↔ оригинальные данные
-        
-        **🔄 Процесс:**
+
+        **Процесс:**
         1. Загрузка анонимизированного документа и таблицы замен
         2. Анализ соответствий UUID ↔ оригинальные данные
         3. Обратная замена UUID на исходные чувствительные данные
         4. Сохранение форматирования документа
-        
-        **✨ Результат:** `d0e62465-8f2a-4b3c-9e1f...` → `admin@company.ru` с исходным форматированием
+
+        **Результат:** `d0e62465-8f2a-4b3c-9e1f...` → `admin@company.ru` с исходным форматированием
         """)
     
     col1, col2 = st.columns(2)
@@ -715,7 +727,7 @@ def display_deanonymization_section():
         )
         
         if anonymized_file is not None:
-            st.success(f"✅ Загружен: {anonymized_file.name}")
+            # Уведомление об успешной загрузке файла скрыто по требованию
             st.session_state.deanonymized_doc = anonymized_file
         
     with col2:
@@ -731,7 +743,7 @@ def display_deanonymization_section():
         )
         
         if replacement_file is not None:
-            st.success(f"✅ Загружена: {replacement_file.name}")
+            # Уведомление об успешной загрузке файла скрыто по требованию
             st.session_state.replacement_table = replacement_file
     
     # Проверяем готовность к деанонимизации
@@ -742,11 +754,21 @@ def display_deanonymization_section():
         
         st.markdown("---")
         
-        # Кнопка деанонимизации
-        col1, col2, col3 = st.columns([1, 2, 1])
+        # Кнопка деанонимизации справа, компактная ширина
+        col1, col2 = st.columns([6, 1])
         with col2:
+            # Короткое название для кнопки, чтобы не было переноса
+            st.markdown("""
+            <style>
+            .stButton button, .stButton > button {
+                white-space: nowrap !important;
+                min-width: 220px;
+                max-width: 100%;
+            }
+            </style>
+            """, unsafe_allow_html=True)
             if st.button(
-                "🔓 Деанонимизировать документ", 
+                "Деанонимизировать документ",  # Короткое название без переноса
                 key="deanonymize_btn",
                 type="primary",
                 use_container_width=True
@@ -998,38 +1020,38 @@ def main():
         st.markdown("**Анонимизация DOCX документов с заменой чувствительных данных на UUID и полным сохранением форматирования**")
         # Показываем описание и инструкции только на первом шаге
         # Объединенное описание функционала и инструкций
-        with st.expander("ℹ️ Как работает анонимизация", expanded=False):
+        with st.expander("Как работает анонимизация", expanded=False):
             st.markdown("""
-            **🎯 Основная задача:** Заменить чувствительные данные (email, телефоны, коды документов) на уникальные UUID 
+            **Основная задача:** Заменить чувствительные данные (email, телефоны, коды документов) на уникальные UUID 
             с **полным сохранением исходного форматирования** документа.
-            
-            **🔄 Пошаговый процесс анонимизации:**
-            
-            **1. 📂 Загрузка документа**
+
+            **Пошаговый процесс анонимизации:**
+
+            **1. Загрузка документа**
             - Загрузите DOCX документ в разделе "Выберите документ для анонимизации" ниже
             - Система автоматически проанализирует структуру документа
-            
-            **2. 🔍 Анализ и поиск данных**
+
+            **2. Анализ и поиск данных**
             - Автоматический поиск чувствительных данных (email, телефоны, ИНН, паспорта и др.)
             - Использование современных NLP технологий и регулярных выражений
-            
-            **3. ✅ Подтверждение замен**
+
+            **3. Подтверждение замен**
             - Просмотр найденных данных в разделе "Шаг 2"
             - Выберите данные для анонимизации с помощью чекбоксов
             - Добавьте комментарии при необходимости
-            
-            **4. 🔄 Точечная замена**
+
+            **4. Точечная замена**
             - Замена выбранных данных на уникальные UUID
             - **Полное сохранение форматирования:** шрифт, цвет, размер, стили остаются без изменений
-            
-            **5. 📥 Получение результатов**
+
+            **5. Получение результатов**
             - Скачивание анонимизированного документа
             - Получение таблицы соответствий (UUID ↔ оригинальные данные)
             - Детальные отчеты о выполненных заменах
-            
-            **✨ Результат:** `admin@company.ru` → `d0e62465-8f2a-4b3c-9e1f...` с тем же шрифтом, цветом, размером!
-            
-            **🔒 Безопасность:** Все оригинальные данные сохраняются в зашифрованной таблице замен для возможности восстановления.
+
+            **Результат:** `admin@company.ru` → `d0e62465-8f2a-4b3c-9e1f...` с тем же шрифтом, цветом, размером!
+
+            **Безопасность:** Все оригинальные данные сохраняются в зашифрованной таблице замен для возможности восстановления.
             """)
         
         step1_upload_document()

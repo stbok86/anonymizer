@@ -58,7 +58,7 @@ class HybridGovernmentStrategy(DetectionStrategy):
             from government_organizations import GOVERNMENT_ORGANIZATIONS
             self.partial_matcher = PartialMatchPostProcessor(GOVERNMENT_ORGANIZATIONS)
         except ImportError as e:
-            print(f"⚠️ Не удалось загрузить словарь государственных организаций: {e}")
+            print(f"[WARNING] Не удалось загрузить словарь государственных организаций: {e}")
             self.partial_matcher = None
         
         # Паттерны для фильтрации false positives теперь берём из JSON/настроек

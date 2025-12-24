@@ -321,7 +321,7 @@ class NLPConfig:
     def get_max_results_for_category(self, category: str) -> int:
         """Возвращает максимальное количество результатов для категории"""
         methods_config = self.config.get('detection_methods', {}).get(category, {})
-        return methods_config.get('max_results', 10)
+        return methods_config.get('max_results', 2000)  # По умолчанию 2000
     
     def get_method_settings(self, category: str, method: str) -> Dict[str, Any]:
         """Возвращает настройки конкретного метода для категории"""

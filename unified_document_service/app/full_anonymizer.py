@@ -29,6 +29,7 @@ class FullAnonymizer:
     def _call_nlp_service(self, text: str) -> List[Dict[str, Any]]:
         """
         Вызывает NLP Service для поиска чувствительных данных
+        УСТАРЕЛО: Используйте _process_blocks_optimized для батчинга
         """
         try:
             payload = {
@@ -38,6 +39,8 @@ class FullAnonymizer:
                         "block_id": "doc_block_1",
                         "block_type": "text"
                     }
+
+            # ...existing code...
                 ],
                 "options": {}
             }
@@ -51,19 +54,184 @@ class FullAnonymizer:
                 result = response.json()
                 return result.get('detections', [])
             else:
-                print(f"⚠️  NLP Service error: {response.status_code}")
-                print(f"⚠️  Response: {response.text}")
+                print(f"[WARNING] NLP Service error: {response.status_code}")
+                print(f"[WARNING] Response: {response.text}")
                 return []
         except Exception as e:
-            print(f"⚠️  NLP Service unavailable: {str(e)}")
+            print(f"[WARNING] NLP Service unavailable: {str(e)}")
             return []
+    
+    def _deduplicate_blocks(self, blocks: List[Dict]) -> tuple:
+        """
+        ОПТИМИЗАЦИЯ 1: Группирует блоки по уникальному тексту для кэширования
+        
+        Args:
+            blocks: Список блоков для обработки
+            
+        Returns:
+            tuple: (unique_blocks, text_to_blocks_mapping)
+        """
+        text_to_blocks = {}
+        
+        for block in blocks:
+            text = block.get('text', '').strip()
+            if text:
+                if text not in text_to_blocks:
+                    text_to_blocks[text] = []
+                text_to_blocks[text].append(block)
+        
+        # Создаём список уникальных блоков (берём первый из каждой группы)
+        unique_blocks = [block_list[0] for block_list in text_to_blocks.values()]
+        
+        return unique_blocks, text_to_blocks
+    
+    def _process_blocks_batch(self, blocks: List[Dict], batch_size: int = 50) -> List[Dict]:
+        """
+        ОПТИМИЗАЦИЯ 2: Обрабатывает блоки батчами через NLP Service
+        
+        Args:
+            blocks: Список блоков для обработки
+            batch_size: Размер батча (по умолчанию 50)
+            
+        Returns:
+            Список всех детекций с привязкой к блокам
+        """
+        all_matches = []
+        
+        # Разбиваем на батчи
+        for i in range(0, len(blocks), batch_size):
+            batch_blocks = blocks[i:i + batch_size]
+            
+            # Готовим payload для NLP Service
+            nlp_payload = {
+                "blocks": [
+                    {
+                        "content": block.get('text', ''),
+                        "block_id": block['block_id'],
+                        "block_type": block.get('type', 'text')
+                    }
+                    for block in batch_blocks
+                    if block.get('text', '').strip()
+                ],
+                "options": {}
+            }
+            
+            if not nlp_payload["blocks"]:
+                continue
+            
+            try:
+                # ОДИН HTTP запрос на весь батч
+                response = requests.post(
+                    f"{self.nlp_service_url}/analyze",
+                    json=nlp_payload,
+                    timeout=60
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    batch_detections = result.get('detections', [])
+                    
+                    # Создаём mapping block_id -> block для быстрого поиска
+                    blocks_map = {b['block_id']: b for b in batch_blocks}
+                    
+                    # Привязываем детекции к блокам
+                    for detection in batch_detections:
+                        block_id = detection.get('block_id')
+                        if block_id in blocks_map:
+                            source_block = blocks_map[block_id]
+                            all_matches.append({
+                                'block_id': block_id,
+                                'original_value': detection['original_value'],
+                                'position': detection['position'],
+                                'element': source_block.get('element'),
+                                'category': detection['category'],
+                                'confidence': detection['confidence'],
+                                'source': 'nlp_service',
+                                'method': detection['method']
+                            })
+                else:
+                    print(f"[WARNING] NLP Service error for batch: {response.status_code}")
+            except Exception as e:
+                print(f"[WARNING] Error processing batch: {str(e)}")
+                continue
+        
+        return all_matches
+    
+    def _process_blocks_optimized(self, blocks: List[Dict], batch_size: int = 50) -> List[Dict]:
+        """
+        ОПТИМИЗАЦИЯ КОМБО: Кэширование дубликатов + Батчинг HTTP запросов
+        
+        Args:
+            blocks: Список всех блоков для обработки
+            batch_size: Размер батча для HTTP запросов
+            
+        Returns:
+            Список всех детекций для всех блоков (включая дубликаты)
+        """
+        import time
+        start_time = time.time()
+        
+        # ШАГ 1: Дедупликация - находим уникальные тексты
+        unique_blocks, text_to_blocks = self._deduplicate_blocks(blocks)
+        
+        blocks_with_text = [b for b in blocks if b.get('text', '').strip()]
+        dedup_ratio = (1 - len(unique_blocks) / len(blocks_with_text)) * 100 if blocks_with_text else 0
+        
+        print(f"\n[OPTIMIZATION] Дедупликация:")
+        print(f"   Всего блоков: {len(blocks)}")
+        print(f"   С текстом: {len(blocks_with_text)}")
+        print(f"   Уникальных: {len(unique_blocks)}")
+        print(f"   Дубликатов: {len(blocks_with_text) - len(unique_blocks)} ({dedup_ratio:.1f}%)")
+        
+        # ШАГ 2: Батчинг - обрабатываем только уникальные блоки
+        num_batches = (len(unique_blocks) + batch_size - 1) // batch_size
+        print(f"\n[OPTIMIZATION] Батчинг:")
+        print(f"   Batch size: {batch_size}")
+        print(f"   Количество батчей: {num_batches}")
+        print(f"   Было бы запросов БЕЗ оптимизации: {len(blocks_with_text)}")
+        print(f"   Будет запросов С оптимизацией: {num_batches}")
+        print(f"   Экономия HTTP запросов: {len(blocks_with_text) - num_batches} ({100*(1 - num_batches/len(blocks_with_text)):.1f}%)\n")
+        
+        unique_matches = self._process_blocks_batch(unique_blocks, batch_size)
+        
+        # ШАГ 3: Реплицирование - копируем детекции на дубликаты
+        all_matches = []
+        
+        for match in unique_matches:
+            # Находим исходный блок и его текст
+            source_block_id = match['block_id']
+            source_block = next((b for b in unique_blocks if b['block_id'] == source_block_id), None)
+            
+            if source_block:
+                source_text = source_block.get('text', '').strip()
+                
+                # Реплицируем match для всех блоков с таким же текстом
+                for duplicate_block in text_to_blocks.get(source_text, []):
+                    match_copy = {
+                        'block_id': duplicate_block['block_id'],      # УНИКАЛЬНЫЙ ID
+                        'original_value': match['original_value'],
+                        'position': match['position'],                # ОДИНАКОВАЯ позиция
+                        'element': duplicate_block.get('element'),    # РАЗНАЯ ссылка на объект
+                        'category': match['category'],
+                        'confidence': match['confidence'],
+                        'source': match['source'],
+                        'method': match['method']
+                    }
+                    all_matches.append(match_copy)
+        
+        elapsed_time = time.time() - start_time
+        print(f"[OPTIMIZATION] Обработка завершена за {elapsed_time:.2f}с")
+        print(f"   Детекций найдено: {len(all_matches)}\n")
+        
+        return all_matches
         
     def anonymize_document(self, 
                           input_path: str, 
                           output_path: str,
                           excel_report_path: Optional[str] = None,
                           json_ledger_path: Optional[str] = None,
-                          replacements_table: Optional[List[Dict]] = None) -> Dict[str, Any]:
+                          replacements_table: Optional[List[Dict]] = None,
+                          selected_items: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Полный цикл анонимизации документа с генерацией отчетов
         
@@ -73,6 +241,7 @@ class FullAnonymizer:
             excel_report_path: Путь для Excel отчета (опционально)
             json_ledger_path: Путь для JSON журнала (опционально)
             replacements_table: Предопределенная таблица замен (опционально)
+            selected_items: Список выбранных пользователем элементов (обязателен в рабочем режиме)
             
         Returns:
             Dict с результатами анонимизации
@@ -105,38 +274,21 @@ class FullAnonymizer:
                             }
                             rule_engine_matches.append(match)
                 
-                # 3.2: Поиск через NLP Service (поблочная обработка)
-                nlp_matches = []
+                # 3.2: Поиск через NLP Service (ОПТИМИЗИРОВАННАЯ обработка)
+                print(f"\n[NLP SERVICE] Анализ {len(blocks)} блоков с оптимизацией...")
                 
-                print(f"🤖 Вызываем NLP Service для анализа {len(blocks)} блоков")
+                import time
+                nlp_start = time.time()
                 
-                # Обрабатываем каждый блок отдельно через NLP Service
-                for block in blocks:
-                    block_text = block.get('text', block.get('content', ''))
-                    if not block_text.strip():
-                        continue
-                    
-                    # Вызываем NLP Service для ОДНОГО блока
-                    block_detections = self._call_nlp_service(block_text)
-                    
-                    # Добавляем детекции с привязкой к блоку
-                    for detection in block_detections:
-                        match = {
-                            'block_id': block['block_id'],
-                            'original_value': detection['original_value'],
-                            'position': detection['position'],  # Уже относительно блока
-                            'element': block.get('element'),
-                            'category': detection['category'],
-                            'confidence': detection['confidence'],
-                            'source': 'nlp_service',
-                            'method': detection['method']
-                        }
-                        nlp_matches.append(match)
+                # ОПТИМИЗАЦИЯ: Используем кэширование дубликатов + батчинг
+                nlp_matches = self._process_blocks_optimized(blocks, batch_size=50)
                 
-                print(f"🎯 NLP Service нашел {len(nlp_matches)} детекций во всех блоках")
+                nlp_elapsed = time.time() - nlp_start
+                print(f"[NLP SERVICE] Завершено за {nlp_elapsed:.2f}с ({len(nlp_matches)} детекций)\n")
+                
                 
                 # 3.3: Комбинируем результаты (приоритет NLP Service)
-                print(f"📊 Найдено совпадений: Rule Engine={len(rule_engine_matches)}, NLP Service={len(nlp_matches)}")
+                # print(f"📊 Найдено совпадений: Rule Engine={len(rule_engine_matches)}, NLP Service={len(nlp_matches)}")
                 
                 # Начинаем с NLP Service (более точные)
                 all_matches = nlp_matches.copy()
@@ -153,7 +305,7 @@ class FullAnonymizer:
                     if not is_duplicate:
                         all_matches.append(re_match)
                 
-                print(f"✅ Итого уникальных совпадений: {len(all_matches)}")
+                # print(f"✅ Итого уникальных совпадений: {len(all_matches)}")
                 
                 # --- ДОБАВЛЯЕМ АНАЛИЗ И АНОНИМИЗАЦИЮ МЕТАДАННЫХ ---
                 # ВРЕМЕННО ОТКЛЮЧЕНО из-за отсутствия метода find_patterns_in_text
@@ -175,6 +327,56 @@ class FullAnonymizer:
                 all_matches = replacements_table
                 processed_blocks = blocks
             
+            # ЭТАП 3.5: Фильтрация по выбранным пользователем элементам
+            if selected_items:
+                # print(f"🎯 [USER_SELECTION] Применяем выбор пользователя: {len(selected_items)} элементов")
+                
+                # Создаем карту блоков для быстрого поиска
+                blocks_map = {block['block_id']: block for block in blocks}
+                
+                # Подготавливаем отфильтрованный список замен
+                filtered_matches = []
+                skipped_items = []
+                seen_replacements = set()  # Для дедупликации
+                
+                for item in selected_items:
+                    block_id = item.get('block_id')
+                    original_value = item.get('original_value', '')
+                    position = item.get('position', {})
+                    uuid_val = item.get('uuid', '')
+                    
+                    # Диагностика некорректных uuid
+                    # if not uuid_val or str(uuid_val).strip().lower() == 'placeholder':
+                    #     print(f"🚨 [BUG] Некорректный uuid для значения '{original_value}' (block_id={block_id}): '{uuid_val}'")
+                    
+                    # Создаем уникальный ключ для дедупликации
+                    dedup_key = (block_id, original_value, position.get('start'), position.get('end'))
+                    
+                    if dedup_key in seen_replacements:
+                        # print(f"🔄 [USER_SELECTION] Пропускаем дубликат: '{original_value}' в {block_id}")
+                        continue
+                    
+                    seen_replacements.add(dedup_key)
+                    
+                    if block_id in blocks_map:
+                        block = blocks_map[block_id]
+                        replacement = {
+                            'block_id': block_id,
+                            'original_value': original_value,
+                            'uuid': uuid_val,
+                            'position': position,
+                            'element': block.get('element'),
+                            'category': item.get('category', 'unknown')
+                        }
+                        filtered_matches.append(replacement)
+                    else:
+                        skipped_items.append(item)
+                
+                # print(f"🎯 [USER_SELECTION] Отобрано пользователем: {len(filtered_matches)} из {len(all_matches)} найденных")
+                
+                # Заменяем all_matches на отфильтрованный список
+                all_matches = filtered_matches
+            
             # ЭТАП 4: Применение замен с сохранением форматирования
             replacement_stats = self.formatter.apply_replacements_to_document(doc, all_matches)
             
@@ -184,8 +386,32 @@ class FullAnonymizer:
             # ЭТАП 5: Сохранение анонимизированного документа (текст)
             doc.save(output_path)
             
+            # ЭТАП 5.5: Сквозная анонимизация для header элементов (выбранных пользователем)
+            if selected_items:
+                header_items = [item for item in selected_items if 'header' in (item.get('block_id') or '').lower()]
+                if header_items:
+                    
+                    from uuid_mapper import UUIDMapper
+                    uuid_mapper = self.formatter.uuid_mapper if hasattr(self.formatter, 'uuid_mapper') else UUIDMapper()
+                    
+                    metadata_items = []
+                    for h in header_items:
+                        uuid_val = h.get('uuid')
+                        if not uuid_val or str(uuid_val).strip().lower() == 'placeholder':
+                            uuid_val = uuid_mapper.get_uuid_for_text(h['original_value'], h.get('category', 'unknown'))
+                        for section in ['core', 'app', 'custom']:
+                            metadata_items.append({
+                                'original_value': h['original_value'],
+                                'uuid': uuid_val,
+                                'category': h.get('category', 'unknown'),
+                                'metadata_section': section,
+                            })
+                    
+                    from docx_metadata_handler import DocxMetadataHandler
+                    metadata_handler = DocxMetadataHandler(output_path)
+                    metadata_handler.anonymize_metadata_in_docx(output_path, output_path, metadata_items)
+            
             # ЭТАП 6: Анонимизация метаданных в docProps/core.xml
-            print(f"\n🔧 [METADATA] Начинаем анонимизацию метаданных...")
             try:
                 from docx_metadata_handler import DocxMetadataHandler
                 from uuid_mapper import UUIDMapper
@@ -200,64 +426,41 @@ class FullAnonymizer:
                 sensitive_metadata = metadata_handler.find_sensitive_metadata(normalized_matches)
                 
                 if sensitive_metadata:
-                    print(f"🔧 [METADATA] Найдено чувствительных данных в метаданных: {len(sensitive_metadata)}")
                     # Генерируем UUID для метаданных если их нет
                     for i, m in enumerate(sensitive_metadata):
                         existing_uuid = m.get('uuid')
                         if not existing_uuid:
-                            print(f"⚠️ [METADATA] UUID отсутствует для метаданных #{i}: '{m.get('original_value', 'N/A')[:50]}', partial_match: '{m.get('partial_match', 'N/A')}'")
                             m['uuid'] = uuid_mapper.get_uuid_for_text(m['original_value'], m.get('category', 'unknown'))
-                        else:
-                            print(f"✅ [METADATA] UUID уже есть для метаданных #{i}: '{m.get('original_value', 'N/A')[:30]}...' → '{existing_uuid}'")
+                        # else: pass
                     
                     # Анонимизируем метаданные в docx
                     metadata_handler.anonymize_metadata_in_docx(output_path, output_path, sensitive_metadata)
-                    print(f"🔧 [METADATA] ✅ Метаданные анонимизированы")
                     
                     # 🎯 ВАЖНО: Добавляем метаданные в список замен для отчета
-                    # Но сначала удаляем дубликаты из документа
-                    print(f"🔧 [DEDUP] Удаление дубликатов перед добавлением метаданных...")
-                    print(f"🔧 [DEDUP] До: {len(normalized_matches)} записей в normalized_matches")
+                    # Фильтрация: не добавляем если все partial_matches уже есть в документе
                     
-                    # Собираем ВСЕ значения из метаданных (и partial_match, и точные совпадения)
-                    metadata_values = set()
-                    for m in sensitive_metadata:
-                        # Для частичных совпадений берем partial_match
-                        partial = m.get('partial_match')
-                        if partial:
-                            metadata_values.add(partial)
-                        # Для точных совпадений берем original_value
-                        else:
-                            metadata_values.add(m.get('original_value', ''))
+                    doc_values = set(m.get('original_value', '') for m in normalized_matches)
                     
-                    print(f"🔧 [DEDUP] Найдено {len(metadata_values)} уникальных значений в метаданных")
-                    
-                    # Удаляем из normalized_matches записи, у которых original_value есть в метаданных
-                    # И source НЕ metadata_* (т.е. записи из документа)
-                    filtered_matches = []
-                    removed_count = 0
-                    for match in normalized_matches:
-                        orig_val = match.get('original_value', '')
-                        source = match.get('source', '')
+                    for meta in sensitive_metadata:
+                        partial_matches = meta.get('partial_matches', [])
                         
-                        # Если это запись из документа И её значение есть в метаданных — удаляем
-                        if not source.startswith('metadata_') and orig_val in metadata_values:
-                            print(f"🔧 [DEDUP] ❌ Удаляем дубликат: '{orig_val}' (source: {source})")
-                            removed_count += 1
+                        if partial_matches:
+                            # Проверяем: есть ли хотя бы один partial_match, которого НЕТ в документе
+                            has_new_value = any(pm.get('partial_match', '') not in doc_values for pm in partial_matches)
+                            
+                            if has_new_value:
+                                # Есть новые значения — добавляем запись метаданных
+                                normalized_matches.append(meta)
+                            # else:
+                                # Все partial_matches уже в документе — пропускаем
                         else:
-                            filtered_matches.append(match)
-                    
-                    normalized_matches = filtered_matches
-                    print(f"🔧 [DEDUP] После удаления дубликатов: {len(normalized_matches)} записей (удалено {removed_count})")
-                    
-                    # Теперь добавляем метаданные
-                    normalized_matches.extend(sensitive_metadata)
-                    print(f"🔧 [DEDUP] После добавления метаданных: {len(normalized_matches)} записей")
-                else:
-                    print(f"🔧 [METADATA] ℹ️ Чувствительных данных в метаданных не найдено")
+                            # Для точных совпадений — добавляем только если нет в документе
+                            if meta.get('original_value', '') not in doc_values:
+                                normalized_matches.append(meta)
+                            # else: pass
+                # else: pass
                     
             except Exception as e:
-                print(f"🔧 [METADATA] ⚠️ Ошибка при анонимизации метаданных: {str(e)}")
                 import traceback
                 traceback.print_exc()
             
@@ -265,9 +468,11 @@ class FullAnonymizer:
             results = {
                 'status': 'success',
                 'message': 'Документ успешно анонимизирован',
-                'statistics': replacement_stats,
+                'replacement_stats': replacement_stats,
+                'statistics': replacement_stats,  # Для обратной совместимости
                 'total_blocks': len(blocks),
                 'matches_count': len(all_matches),
+                'detections_found': normalized_matches,  # Для тестов и UI
                 'anonymized_document_path': output_path
             }
             # Генерация Excel отчета
@@ -291,126 +496,6 @@ class FullAnonymizer:
                 'error_type': type(e).__name__
             }
 
-    def anonymize_selected_items(self, 
-                                input_path: str, 
-                                output_path: str,
-                                selected_items: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Анонимизация только выбранных пользователем элементов
-        
-        Args:
-            input_path: Путь к исходному документу
-            output_path: Путь для сохранения анонимизированного документа
-            selected_items: Список выбранных для анонимизации элементов
-            
-        Returns:
-            Dict с результатами селективной анонимизации
-        """
-        try:
-            print(f"🔧 [FULL_ANONYMIZER] Получено элементов для замены: {len(selected_items)}")
-            for i, item in enumerate(selected_items[:5]):  # Показываем первые 5
-                print(f"🔧 [FULL_ANONYMIZER] Элемент {i+1}: '{item.get('original_value', 'N/A')}' в блоке {item.get('block_id', 'N/A')}")
-            if len(selected_items) > 5:
-                print(f"🔧 [FULL_ANONYMIZER] ... и еще {len(selected_items) - 5} элементов")
-            
-            # Загружаем документ
-            doc = Document(input_path)
-            
-            # Извлекаем блоки для получения элементов документа
-            blocks = self.block_builder.build_blocks(doc)
-            
-            # Создаем карту блоков для быстрого поиска
-            blocks_map = {block['block_id']: block for block in blocks}
-            print(f"🗂️  [FULL_ANONYMIZER] Создана карта блоков: {list(blocks_map.keys())}")
-            
-            # Подготавливаем замены на основе выбранных элементов
-            replacements_for_formatting = []
-            skipped_items = []
-            seen_replacements = set()  # Для дедупликации
-            
-            for item in selected_items:
-                block_id = item.get('block_id')
-                original_value = item.get('original_value', '')
-                position = item.get('position', {})
-                uuid_val = item.get('uuid', '')
-
-                # Диагностика некорректных uuid
-                if not uuid_val or str(uuid_val).strip().lower() == 'placeholder':
-                    print(f"🚨 [BUG] Некорректный uuid для значения '{original_value}' (block_id={block_id}): '{uuid_val}'")
-
-                # Создаем уникальный ключ для дедупликации
-                dedup_key = (block_id, original_value, position.get('start'), position.get('end'))
-
-                if dedup_key in seen_replacements:
-                    print(f"🔄 [FULL_ANONYMIZER] Пропускаем дубликат: '{original_value}' в {block_id}")
-                    continue
-
-                seen_replacements.add(dedup_key)
-
-                if block_id in blocks_map:
-                    block = blocks_map[block_id]
-                    replacement = {
-                        'block_id': block_id,
-                        'original_value': original_value,
-                        'uuid': uuid_val,
-                        'position': position,
-                        'element': block.get('element'),
-                        'category': item['category']
-                    }
-                    replacements_for_formatting.append(replacement)
-                else:
-                    skipped_items.append(item)
-                    print(f"⚠️  [FULL_ANONYMIZER] Пропущен элемент - блок '{block_id}' не найден: '{original_value}'")
-            
-            print(f"🔧 [FULL_ANONYMIZER] Подготовлено замен для FormatterApplier: {len(replacements_for_formatting)}")
-            print(f"⚠️  [FULL_ANONYMIZER] Пропущено элементов: {len(skipped_items)}")
-            if skipped_items:
-                print(f"⚠️  [FULL_ANONYMIZER] Доступные block_id: {list(blocks_map.keys())}")
-
-            # Применяем замены
-            replacement_stats = self.formatter.apply_replacements_to_document(doc, replacements_for_formatting)
-            doc.save(output_path)
-
-            # --- СКВОЗНАЯ АНОНИМИЗАЦИЯ ДЛЯ HEADER ---
-            # Для каждого выбранного блока типа header делаем замену и в метаданных
-            header_items = [item for item in selected_items if 'header' in (item.get('block_id') or '').lower()]
-            if header_items:
-                print(f"🔧 [FULL_ANONYMIZER] Найдено header-элементов для сквозной анонимизации: {len(header_items)}")
-                # Готовим список для метаданных: для каждого header original_value и uuid (если нет - генерируем)
-                from uuid_mapper import UUIDMapper
-                uuid_mapper = self.formatter.uuid_mapper if hasattr(self.formatter, 'uuid_mapper') else UUIDMapper()
-                metadata_items = []
-                for h in header_items:
-                    uuid_val = h.get('uuid')
-                    if not uuid_val or str(uuid_val).strip().lower() == 'placeholder':
-                        uuid_val = uuid_mapper.get_uuid_for_text(h['original_value'], h['category'])
-                    for section in ['core', 'app', 'custom']:
-                        metadata_items.append({
-                            'original_value': h['original_value'],
-                            'uuid': uuid_val,
-                            'category': h['category'],
-                            'metadata_section': section,
-                        })
-                from docx_metadata_handler import DocxMetadataHandler
-                metadata_handler = DocxMetadataHandler(output_path)
-                metadata_handler.anonymize_metadata_in_docx(output_path, output_path, metadata_items)
-
-            return {
-                'status': 'success',
-                'message': f'Селективная анонимизация завершена. Обработано {len(selected_items)} элементов.',
-                'statistics': replacement_stats,
-                'selected_items_count': len(selected_items),
-                'replacements_applied': replacement_stats.get('total_replacements', 0),
-                'anonymized_document_path': output_path
-            }
-            
-        except Exception as e:
-            return {
-                'status': 'error',
-                'error_message': f'Ошибка селективной анонимизации: {str(e)}',
-                'error_type': type(e).__name__
-            }
-
     def _generate_excel_report(self, processed_blocks: List[Dict], matches: List[Dict], excel_path: str) -> bool:
         """
         Генерация Excel отчета с детерминистичными UUID
@@ -426,12 +511,17 @@ class FullAnonymizer:
         try:
             report_data = []
             
-            print(f"📝 [EXCEL_REPORT] Генерация отчета для {len(matches)} замен")
-            print(f"📝 [EXCEL_REPORT] Первые 3 замены:")
-            for i, match in enumerate(matches[:3], 1):
-                print(f"  {i}. original_value: '{match.get('original_value', 'N/A')[:50]}'")
-                print(f"     uuid: '{match.get('uuid', 'N/A')}'")
-                print(f"     category: '{match.get('category', 'N/A')}'")
+            # print(f"📝 [EXCEL_REPORT] Генерация отчета для {len(matches)} замен")
+            # print(f"📝 [EXCEL_REPORT] Первые 3 замены:")
+            # for i, match in enumerate(matches[:3], 1):
+            #     print(f"  {i}. original_value: '{match.get('original_value', 'N/A')[:50]}'")
+            #     print(f"     uuid: '{match.get('uuid', 'N/A')}'")
+            #     print(f"     category: '{match.get('category', 'N/A')}'")
+            #     print(f"     source: '{match.get('source', 'N/A')}'")
+            #     print(f"     block_id (top level): '{match.get('block_id', 'N/A')}'")
+            #     position = match.get('position', {})
+            #     block_id = position.get('block_id', 'N/A') if isinstance(position, dict) else 'N/A'
+            #     print(f"     position.block_id: '{block_id}'")
             
             for i, match in enumerate(matches, 1):
                 original_value = match.get('original_value', '')
@@ -441,40 +531,41 @@ class FullAnonymizer:
                 # Если UUID нет в match, генерируем новый (резервный вариант)
                 uuid_for_replacement = match.get('uuid')
                 if not uuid_for_replacement:
-                    print(f"⚠️ [EXCEL_REPORT] UUID отсутствует для '{original_value[:50]}', генерируем новый")
                     uuid_for_replacement = self.formatter.uuid_mapper.get_uuid_for_text(original_value, category)
                 
-                # Определяем расположение замены
-                # Если source начинается с metadata_ — это метаданные
-                source = match.get('source', '')
-                location = 'Метаданные' if source.startswith('metadata_') else 'Документ'
+                # Получаем block_id - сначала проверяем верхний уровень, потом position
+                block_id = match.get('block_id', '')
+                if not block_id:
+                    position = match.get('position', {})
+                    block_id = position.get('block_id', '') if isinstance(position, dict) else ''
                 
                 report_data.append({
                     '№': i,
                     'Исходные данные': original_value,
                     'Замена (идентификатор)': uuid_for_replacement,
-                    'Расположение': location
+                    'ID блока документа': block_id
                 })
             
             # Создаем DataFrame с правильными колонками
             df = pd.DataFrame(report_data)
-            
+
+            # Удалена очистка строк и перекодировка: сохраняем строки в Unicode для корректного отображения кириллицы и других символов
+            # df = df.applymap(clean_excel_string)
+
             # Сохраняем в Excel
             with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
                 df.to_excel(writer, sheet_name='Замены', index=False)
-                
                 # Настраиваем форматирование колонок
                 worksheet = writer.sheets['Замены']
-                worksheet.column_dimensions['A'].width = 5
-                worksheet.column_dimensions['B'].width = 40
-                worksheet.column_dimensions['C'].width = 45
-                worksheet.column_dimensions['D'].width = 15  # Колонка "Расположение"
-            
-            print(f"✅ Excel отчет сохранен: {excel_path} ({len(report_data)} записей)")
+                worksheet.column_dimensions['A'].width = 5      # №
+                worksheet.column_dimensions['B'].width = 60     # Исходные данные (было 40, увеличено в 1.5 раза)
+                worksheet.column_dimensions['C'].width = 45     # Замена (идентификатор)
+                worksheet.column_dimensions['D'].width = 30     # ID блока документа (было 20, увеличено в 1.5 раза)
+            # print(f"✅ Excel отчет сохранен: {excel_path} ({len(report_data)} записей)")
             return True
             
         except Exception as e:
-            print(f"❌ Ошибка генерации Excel отчета: {str(e)}")
+            # print(f"❌ Ошибка генерации Excel отчета: {str(e)}")
             import traceback
             traceback.print_exc()
             return False

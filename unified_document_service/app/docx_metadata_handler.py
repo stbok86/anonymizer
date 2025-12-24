@@ -64,7 +64,7 @@ class DocxMetadataHandler:
                     'custom': custom_metadata
                 }
                 
-                print(f"📋 [METADATA] ✅ Извлечено метаданных:")
+                print(f"[METADATA] [SUCCESS] Извлечено метаданных:")
                 print(f"  📌 Core properties: {len(core_metadata)}")
                 print(f"  📌 App properties: {len(app_metadata)}")
                 print(f"  📌 Custom properties: {len(custom_metadata)}")
@@ -72,7 +72,7 @@ class DocxMetadataHandler:
                 return self.metadata
                 
         except Exception as e:
-            print(f"📋 [METADATA] ❌ Ошибка при извлечении метаданных: {str(e)}")
+            print(f"[METADATA] [ERROR] Ошибка при извлечении метаданных: {str(e)}")
             return {}
     
     def _extract_core_metadata(self, docx_zip: zipfile.ZipFile) -> Dict[str, str]:
@@ -113,7 +113,7 @@ class DocxMetadataHandler:
                         print(f"📋 [CORE] {prop_name}: '{element.text}'")
                         
         except Exception as e:
-            print(f"📋 [CORE] ⚠️ Ошибка при извлечении core.xml: {str(e)}")
+            print(f"[CORE] [WARNING] Ошибка при извлечении core.xml: {str(e)}")
             
         return core_metadata
     
@@ -149,7 +149,7 @@ class DocxMetadataHandler:
                         print(f"📋 [APP] {prop_name}: '{element.text}'")
                         
         except Exception as e:
-            print(f"📋 [APP] ⚠️ Ошибка при извлечении app.xml: {str(e)}")
+            print(f"[APP] [WARNING] Ошибка при извлечении app.xml: {str(e)}")
             
         return app_metadata
     
@@ -184,7 +184,7 @@ class DocxMetadataHandler:
                             print(f"📋 [CUSTOM] {name}: '{value_element.text}'")
                             
         except Exception as e:
-            print(f"📋 [CUSTOM] ⚠️ Ошибка при извлечении custom.xml: {str(e)}")
+            print(f"[CUSTOM] [WARNING] Ошибка при извлечении custom.xml: {str(e)}")
             
         return custom_metadata
     
@@ -198,10 +198,10 @@ class DocxMetadataHandler:
         Returns:
             Список найденных чувствительных метаданных с информацией для замены
         """
-        print(f"🔍 [METADATA] Поиск чувствительных данных в метаданных...")
+        print(f"[METADATA] Поиск чувствительных данных в метаданных...")
         
         if not self.metadata:
-            print(f"🔍 [METADATA] ⚠️ Метаданные не загружены")
+            print(f"[METADATA] [WARNING] Метаданные не загружены")
             return []
         
         sensitive_metadata = []
@@ -222,7 +222,7 @@ class DocxMetadataHandler:
                 if not prop_value:
                     continue
                 
-                print(f"🔍 [METADATA] Проверяем {section_name}.{prop_name}: '{prop_value}'")
+                print(f"[METADATA] Проверяем {section_name}.{prop_name}: '{prop_value}'")
                 
                 # Ищем точные совпадения
                 if prop_value in original_values:
@@ -239,32 +239,38 @@ class DocxMetadataHandler:
                         'related_replacement': original_replacement
                     })
                     
-                    print(f"🔍 [METADATA] ✅ Найдены чувствительные данные: {section_name}.{prop_name} = '{prop_value}'")
+                    print(f"[METADATA] [SUCCESS] Найдены чувствительные данные: {section_name}.{prop_name} = '{prop_value}'")
                 
                 # Ищем частичные совпадения (подстроки)
-                # ВАЖНО: Ищем ВСЕ совпадения, не останавливаемся на первом
+                # ВАЖНО: Группируем все совпадения для одного поля метаданных
                 else:
-                    found_matches = []
+                    found_partial_matches = []
                     for original_value, replacement in original_values.items():
                         if len(original_value) >= 3 and original_value in prop_value:
-                            found_matches.append({
-                                'metadata_section': section_name,
-                                'metadata_property': prop_name,
-                                'original_value': prop_value,  # Полное значение метаданных
-                                'partial_match': original_value,  # Найденная подстрока
+                            found_partial_matches.append({
+                                'partial_match': original_value,
                                 'uuid': replacement.get('uuid'),
-                                'category': replacement.get('category'),
-                                'confidence': 0.8,  # Немного меньше уверенности для частичного совпадения
-                                'source': f'metadata_{section_name}_partial',
-                                'related_replacement': replacement
+                                'category': replacement.get('category')
                             })
-                            
-                            print(f"🔍 [METADATA] ✅ Найдено частичное совпадение: {section_name}.{prop_name} содержит '{original_value}'")
+                            print(f"[METADATA] [SUCCESS] Найдено частичное совпадение: {section_name}.{prop_name} содержит '{original_value}'")
                     
-                    # Добавляем все найденные совпадения
-                    sensitive_metadata.extend(found_matches)
+                    # Если найдены частичные совпадения, создаем ОДНУ запись для всего поля
+                    if found_partial_matches:
+                        # Используем UUID первого совпадения (можно изменить логику)
+                        first_match = found_partial_matches[0]
+                        
+                        sensitive_metadata.append({
+                            'metadata_section': section_name,
+                            'metadata_property': prop_name,
+                            'original_value': prop_value,  # Полное значение метаданных
+                            'partial_matches': found_partial_matches,  # Список всех найденных подстрок
+                            'uuid': first_match['uuid'],
+                            'category': first_match['category'],
+                            'confidence': 0.8,
+                            'source': f'metadata_{section_name}_partial'
+                        })
         
-        print(f"🔍 [METADATA] Найдено чувствительных метаданных: {len(sensitive_metadata)}")
+        print(f"[METADATA] Найдено чувствительных метаданных: {len(sensitive_metadata)}")
         return sensitive_metadata
     
     def anonymize_metadata_in_docx(self, docx_path: str, output_path: str, 
@@ -280,19 +286,23 @@ class DocxMetadataHandler:
         Returns:
             True если анонимизация прошла успешно
         """
-        print(f"🔧 [METADATA] Начинаем анонимизацию метаданных...")
-        print(f"📄 Input: {os.path.basename(docx_path)}")
-        print(f"📄 Output: {os.path.basename(output_path)}")
-        print(f"🎯 Замен в метаданных: {len(sensitive_metadata)}")
+        print(f"[METADATA] Начинаем анонимизацию метаданных...")
+        print(f"[FILE] Input: {os.path.basename(docx_path)}")
+        print(f"[FILE] Output: {os.path.basename(output_path)}")
+        print(f"[INFO] Замен в метаданных: {len(sensitive_metadata)}")
+        print(f"[DEBUG] Список чувствительных метаданных:")
+        for i, item in enumerate(sensitive_metadata):
+            print(f"  {i+1}. section={item.get('metadata_section')}, property={item.get('metadata_property')}, original='{item.get('original_value')}', uuid='{item.get('uuid')}'")
         if not sensitive_metadata:
             import shutil
             shutil.copy2(docx_path, output_path)
-            print(f"🔧 [METADATA] ✅ Нет чувствительных метаданных, файл скопирован")
+            print(f"[METADATA] [SUCCESS] Нет чувствительных метаданных, файл скопирован")
             return True
         try:
-            print(f"🔧 [METADATA] Список замен для метаданных:")
+            print(f"[METADATA] Список замен для метаданных:")
             for i, item in enumerate(sensitive_metadata):
-                print(f"    {i+1}. [{item.get('metadata_section')}] '{item.get('original_value')}' → '{item.get('uuid')}' (категория: {item.get('category')})")
+                print(f"    {i+1}. [{item.get('metadata_section')}] '{item.get('original_value')}' -> '{item.get('uuid')}' (категория: {item.get('category')})")
+                print(f"      [DEBUG] property: {item.get('metadata_property')}, category: {item.get('category')}")
             with tempfile.TemporaryDirectory() as temp_dir:
                 with zipfile.ZipFile(docx_path, 'r') as zip_ref:
                     zip_ref.extractall(temp_dir)
@@ -301,27 +311,36 @@ class DocxMetadataHandler:
                 core_xml_path = os.path.join(temp_dir, 'docProps', 'core.xml')
                 app_xml_path = os.path.join(temp_dir, 'docProps', 'app.xml')
                 custom_xml_path = os.path.join(temp_dir, 'docProps', 'custom.xml')
-                print(f"🔧 [METADATA] Проверяем наличие файлов:")
+                print(f"[METADATA] Проверяем наличие файлов:")
                 print(f"    core.xml:   {'OK' if os.path.exists(core_xml_path) else 'NOT FOUND'}")
                 print(f"    app.xml:    {'OK' if os.path.exists(app_xml_path) else 'NOT FOUND'}")
                 print(f"    custom.xml: {'OK' if os.path.exists(custom_xml_path) else 'NOT FOUND'}")
                 # Анонимизируем core.xml
                 if os.path.exists(core_xml_path):
-                    print(f"🔧 [METADATA] Обработка core.xml...")
+                    print(f"[METADATA] Обработка core.xml...")
                     replaced = self._anonymize_xml_file(core_xml_path, sensitive_metadata, 'core')
-                    print(f"🔧 [METADATA] Замен в core.xml: {replaced}")
+                    print(f"[METADATA] Замен в core.xml: {replaced}")
+                    print(f"[DEBUG] После обработки core.xml, sensitive_metadata:")
+                    for i, item in enumerate(sensitive_metadata):
+                        print(f"      {i+1}. [{item.get('metadata_section')}] '{item.get('original_value')}' -> '{item.get('uuid')}'")
                     replacements_made += replaced
                 # Анонимизируем app.xml
                 if os.path.exists(app_xml_path):
-                    print(f"🔧 [METADATA] Обработка app.xml...")
+                    print(f"[METADATA] Обработка app.xml...")
                     replaced = self._anonymize_xml_file(app_xml_path, sensitive_metadata, 'app')
-                    print(f"🔧 [METADATA] Замен в app.xml: {replaced}")
+                    print(f"[METADATA] Замен в app.xml: {replaced}")
+                    print(f"[DEBUG] После обработки app.xml, sensitive_metadata:")
+                    for i, item in enumerate(sensitive_metadata):
+                        print(f"      {i+1}. [{item.get('metadata_section')}] '{item.get('original_value')}' -> '{item.get('uuid')}'")
                     replacements_made += replaced
                 # Анонимизируем custom.xml
                 if os.path.exists(custom_xml_path):
-                    print(f"🔧 [METADATA] Обработка custom.xml...")
+                    print(f"[METADATA] Обработка custom.xml...")
                     replaced = self._anonymize_xml_file(custom_xml_path, sensitive_metadata, 'custom')
-                    print(f"🔧 [METADATA] Замен в custom.xml: {replaced}")
+                    print(f"[METADATA] Замен в custom.xml: {replaced}")
+                    print(f"[DEBUG] После обработки custom.xml, sensitive_metadata:")
+                    for i, item in enumerate(sensitive_metadata):
+                        print(f"      {i+1}. [{item.get('metadata_section')}] '{item.get('original_value')}' -> '{item.get('uuid')}'")
                     replacements_made += replaced
                 # Пересобираем docx
                 with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zip_out:
@@ -330,12 +349,12 @@ class DocxMetadataHandler:
                             file_path = os.path.join(root, file)
                             arc_path = os.path.relpath(file_path, temp_dir)
                             zip_out.write(file_path, arc_path)
-                print(f"🔧 [METADATA] ✅ Анонимизация завершена. Замен в метаданных: {replacements_made}")
+                print(f"[METADATA] [SUCCESS] Анонимизация завершена. Замен в метаданных: {replacements_made}")
             return True
         except Exception as e:
-            print(f"🔧 [METADATA] ❌ Ошибка при анонимизации метаданных: {str(e)}")
+            print(f"[METADATA] [ERROR] Ошибка при анонимизации метаданных: {str(e)}")
             import traceback
-            print(f"🔧 [METADATA] Traceback: {traceback.format_exc()}")
+            print(f"[METADATA] Traceback: {traceback.format_exc()}")
             return False
     
     def _anonymize_xml_file(self, xml_path: str, sensitive_metadata: List[Dict], section: str) -> int:
@@ -355,7 +374,7 @@ class DocxMetadataHandler:
             
         try:
             # Читаем XML файл как текст (для простоты замен)
-            with open(xml_path, 'r', encoding='utf-8') as f:
+            with open(xml_path, 'r', encoding='utf-8', errors='replace') as f:
                 xml_content = f.read()
 
             print(f"\n===== [DEBUG] Содержимое {os.path.basename(xml_path)} ДО замены =====\n{xml_content[:2000]}\n...\n")
@@ -381,7 +400,7 @@ class DocxMetadataHandler:
                             print(f"[DEBUG] Найден partial_match '{partial_match}' в XML, выполняем замену на '{uuid}'")
                             xml_content = xml_content.replace(partial_match, uuid)
                             replacements_made += 1
-                            print(f"🔧 [XML-{section.upper()}] Частичная замена: '{partial_match}' → '{uuid}'")
+                            print(f"[XML-{section.upper()}] Частичная замена: '{partial_match}' -> '{uuid}'")
                         else:
                             print(f"[DEBUG] partial_match '{partial_match}' НЕ найден в XML!")
                     else:
@@ -390,24 +409,24 @@ class DocxMetadataHandler:
                             print(f"[DEBUG] Найден original_value '{original_value}' в XML, выполняем замену на '{uuid}'")
                             xml_content = xml_content.replace(original_value, uuid)
                             replacements_made += 1
-                            print(f"🔧 [XML-{section.upper()}] Полная замена: '{original_value}' → '{uuid}'")
+                            print(f"[XML-{section.upper()}] Полная замена: '{original_value}' -> '{uuid}'")
                         else:
                             print(f"[DEBUG] original_value '{original_value}' НЕ найден в XML!")
 
             # Сохраняем измененный XML файл
             if xml_content != original_content:
-                with open(xml_path, 'w', encoding='utf-8') as f:
+                with open(xml_path, 'w', encoding='utf-8', errors='replace') as f:
                     f.write(xml_content)
 
                 print(f"\n===== [DEBUG] Содержимое {os.path.basename(xml_path)} ПОСЛЕ замены =====\n{xml_content[:2000]}\n...\n")
-                print(f"🔧 [XML-{section.upper()}] ✅ Файл обновлен: {os.path.basename(xml_path)}")
+                print(f"[XML-{section.upper()}] [SUCCESS] Файл обновлен: {os.path.basename(xml_path)}")
             else:
                 print(f"[DEBUG] Изменений в {os.path.basename(xml_path)} не было!")
 
             return replacements_made
 
         except Exception as e:
-            print(f"🔧 [XML-{section.upper()}] ❌ Ошибка при анонимизации {xml_path}: {str(e)}")
+            print(f"[XML-{section.upper()}] [ERROR] Ошибка при анонимизации {xml_path}: {str(e)}")
             return 0
     
     def get_metadata_summary(self) -> Dict[str, Any]:
@@ -439,10 +458,10 @@ def test_metadata_handler():
     test_file = r"C:\Projects\Anonymizer\unified_document_service\test_docs\test_01_1_4_SD1-4.docx"
     
     if not os.path.exists(test_file):
-        print(f"❌ Тестовый файл не найден: {test_file}")
+        print(f"[ERROR] Тестовый файл не найден: {test_file}")
         return
     
-    print("🧪 ТЕСТИРОВАНИЕ ОБРАБОТЧИКА МЕТАДАННЫХ")
+    print("[TEST] ТЕСТИРОВАНИЕ ОБРАБОТЧИКА МЕТАДАННЫХ")
     print("=" * 50)
     
     handler = DocxMetadataHandler(test_file)
@@ -452,7 +471,7 @@ def test_metadata_handler():
     
     # Выводим сводку
     summary = handler.get_metadata_summary()
-    print(f"\n📊 СВОДКА МЕТАДАННЫХ:")
+    print(f"\n[SUMMARY] СВОДКА МЕТАДАННЫХ:")
     print(f"  📌 Всего свойств: {summary['total_properties']}")
     for section, count in summary['sections'].items():
         print(f"  📌 {section}: {count} свойств")
@@ -474,9 +493,9 @@ def test_metadata_handler():
     # Ищем чувствительные метаданные
     sensitive = handler.find_sensitive_metadata(test_replacements)
     
-    print(f"\n🎯 НАЙДЕНО ЧУВСТВИТЕЛЬНЫХ МЕТАДАННЫХ: {len(sensitive)}")
+    print(f"\n[INFO] НАЙДЕНО ЧУВСТВИТЕЛЬНЫХ МЕТАДАННЫХ: {len(sensitive)}")
     for item in sensitive:
-        print(f"  🔍 {item['metadata_section']}.{item['metadata_property']}: '{item['original_value'][:50]}{'...' if len(item['original_value']) > 50 else ''}'")
+        print(f"  [ITEM] {item['metadata_section']}.{item['metadata_property']}: '{item['original_value'][:50]}{'...' if len(item['original_value']) > 50 else ''}'")
 
 if __name__ == "__main__":
     test_metadata_handler()

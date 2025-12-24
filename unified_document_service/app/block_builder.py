@@ -49,14 +49,9 @@ class BlockBuilder:
 				para_idx += 1
 			elif el.tag.endswith('}tbl'):
 				table = Table(el, document)
-				table_text = self._extract_table_text(table)
-				if table_text:
-					blocks.append({
-						"block_id": f"table_{table_idx}",
-						"text": table_text,
-						"type": "table",
-						"element": table
-					})
+				# ИЗМЕНЕНО: Создаём отдельный блок для каждой ячейки
+				table_cell_blocks = self._extract_table_cells(table, table_idx)
+				blocks.extend(table_cell_blocks)
 				table_idx += 1
 		
 		# ЭТАП 3: Все Footers 
@@ -140,20 +135,44 @@ class BlockBuilder:
 		
 		return blocks
 	
-	def _extract_table_text(self, table: Table) -> str:
-		"""Извлекает текст из таблицы с улучшенной обработкой"""
-		rows_text = []
-		for row in table.rows:
-			row_text = []
-			for cell in row.cells:
-				# КРИТИЧНО: Нормализуем текст ячейки (заменяем \xa0 на пробел)
-				cell_content = self._normalize_text(cell.text)
-				if cell_content:
-					row_text.append(cell_content)
-			if row_text:  # Добавляем строку только если в ней есть содержимое
-				rows_text.append(" | ".join(row_text))
+	def _extract_table_cells(self, table: Table, table_idx: int) -> List[Dict[str, Any]]:
+		"""
+		Извлекает каждую ячейку таблицы как отдельный блок.
+		Предотвращает cross-cell детекции от NLP Service.
+		ИСПРАВЛЕНО: Дедупликация объединенных ячеек (gridSpan/vMerge).
+		"""
+		cell_blocks = []
 		
-		return "\n".join(rows_text) if rows_text else ""
+		for row_idx, row in enumerate(table.rows):
+			seen_cells = set()  # Отслеживаем уже обработанные ячейки
+			
+			for cell_idx, cell in enumerate(row.cells):
+				# Проверяем уникальность ячейки по внутреннему элементу
+				# python-docx возвращает объединенные ячейки несколько раз
+				cell_element_id = id(cell._element)
+				
+				if cell_element_id in seen_cells:
+					# Пропускаем дубликат объединенной ячейки
+					continue
+				
+				seen_cells.add(cell_element_id)
+				
+				# Нормализуем текст ячейки
+				cell_content = self._normalize_text(cell.text)
+				
+				# Создаём блок даже для пустых ячеек (для корректной индексации)
+				cell_blocks.append({
+					"block_id": f"table_{table_idx}_cell_{row_idx}_{cell_idx}",
+					"text": cell_content,
+					"block_type": "table_cell",
+					"type": "table_cell",
+					"element": cell,
+					"table_element": table,  # Ссылка на родительскую таблицу
+					"row_idx": row_idx,
+					"cell_idx": cell_idx
+				})
+		
+		return cell_blocks
 	
 	def _has_formatted_content(self, paragraph: Paragraph) -> bool:
 		"""Проверяет наличие форматированного содержимого в параграфе"""

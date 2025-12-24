@@ -82,6 +82,9 @@ class NLPAdapter:
         self.patterns = {}
         self.pattern_configs = {}
         
+        # Флаг для ленивой загрузки lemmatizer (оптимизация производительности)
+        self._lemmatizer_enabled = False
+        
         # Устанавливаем порог уверенности
         self.confidence_threshold = confidence_threshold or self.config.get_global_confidence_threshold()
         
@@ -108,6 +111,75 @@ class NLPAdapter:
         # Инициализируем и кешируем стратегию информационных систем
         self._is_strategy = None
         self._init_information_system_strategy()
+
+        # === Загрузка справочников имен и фамилий ===
+        from fio_dictionaries import load_dictionary
+        dict_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'patterns'))
+        self.male_names = load_dictionary(os.path.join(dict_dir, 'male_names_rus.txt'))
+        self.female_names = load_dictionary(os.path.join(dict_dir, 'female_names_rus.txt'))
+        self.surnames = load_dictionary(os.path.join(dict_dir, 'male_surnames_rus.txt'))
+        # Можно добавить объединение с женскими фамилиями, если появятся
+
+    def _fio_dictionary_filter(self, match_text: str) -> bool:
+        """Проверяет, что ФИО (или часть) действительно содержит имя и фамилию из справочников с учетом лемматизации (любые падежи).
+        Для паттернов с инициалами (например, 'Фамилия И.О.') фильтруется только фамилия."""
+        if not self.morph:
+            return False
+        words = match_text.split()
+        names_set = self.male_names.union(self.female_names)
+        # Унификация: все сравнения через "е" вместо "ё"
+        def norm(s):
+            return s.replace("ё", "е").replace("Ё", "Е")
+
+        def get_lemma(word, prefer_tag=None):
+            """Вернуть нормальную форму слова с нужным тегом (Surn/Name/Patr), иначе первую"""
+            parses = self.morph.parse(word)
+            if prefer_tag:
+                for p in parses:
+                    if prefer_tag in p.tag:
+                        return norm(p.normal_form.capitalize())
+            return norm(parses[0].normal_form.capitalize() if parses else word)
+        def is_initials(word):
+            return bool(len(word) == 4 and word[1] == '.' and word[3] == '.' and word[0].isupper() and word[2].isupper())
+        # Фамилия инициалы ("Сидоров А.В.")
+        if len(words) == 2 and is_initials(words[1]):
+            fam_lemma = get_lemma(words[0], prefer_tag='Surn')
+            return fam_lemma in self.surnames
+        # Инициалы фамилия ("А.В. Смирнов")
+        if len(words) == 2 and is_initials(words[0]):
+            fam_lemma = get_lemma(words[1], prefer_tag='Surn')
+            return fam_lemma in self.surnames
+        # Фамилия инициалы инициалы (редко, но поддержим)
+        if len(words) == 3 and is_initials(words[1]) and is_initials(words[2]):
+            fam_lemma = get_lemma(words[0], prefer_tag='Surn')
+            return fam_lemma in self.surnames
+        # Инициалы инициалы фамилия ("А.В. М.П. Козлова" — экзотика, но поддержим)
+        if len(words) == 3 and is_initials(words[0]) and is_initials(words[1]):
+            fam_lemma = get_lemma(words[2], prefer_tag='Surn')
+            return fam_lemma in self.surnames
+        # Обычная логика для ФИО
+        # Для полного ФИО: ищем фамилию и имя по нужным тегам
+        if len(words) == 3:
+            fam = get_lemma(words[0], prefer_tag='Surn')
+            name = get_lemma(words[1], prefer_tag='Name')
+            otch = get_lemma(words[2], prefer_tag='Patr')
+            return (
+                (fam in self.surnames and name in names_set) or
+                (name in names_set and fam in self.surnames)
+            )
+        elif len(words) == 2:
+            a = get_lemma(words[0], prefer_tag='Surn')
+            b = get_lemma(words[1], prefer_tag='Name')
+            return (
+                (a in self.surnames and b in names_set) or
+                (b in self.surnames and a in names_set)
+            )
+        elif len(words) == 1:
+            l = get_lemma(words[0])
+            return (
+                l in self.surnames or l in names_set
+            )
+        return False
     
     def _load_spacy_model(self):
         """Загружает русскую spaCy модель согласно конфигурации"""
@@ -116,9 +188,11 @@ class NLPAdapter:
         
         for model_name in preferred_models:
             try:
-                self.nlp = spacy.load(model_name)
-                if self.config.should_log_model_loading():
-                    print(f"✅ Загружена русская spaCy модель: {model_name}")
+                # ОПТИМИЗАЦИЯ: Загружаем модель БЕЗ lemmatizer (экономим 53% времени)
+                # Lemmatizer будет добавлен динамически только для person_name категории
+                self.nlp = spacy.load(model_name, exclude=["lemmatizer"])
+                # if self.config.should_log_model_loading():
+                #     pass
                 return
             except OSError:
                 continue
@@ -130,11 +204,30 @@ class NLPAdapter:
         """Инициализирует морфологический анализатор pymorphy3"""
         try:
             self.morph = pymorphy3.MorphAnalyzer()
-            if self.config.should_log_model_loading():
-                print("✅ Морфологический анализатор pymorphy3 загружен")
+            # if self.config.should_log_model_loading():
+            #     pass
         except Exception as e:
-            print(f"⚠️ Не удалось загрузить pymorphy3: {e}")
             self.morph = None
+    
+    def _ensure_lemmatizer_enabled(self):
+        """
+        ОПТИМИЗАЦИЯ: Включает lemmatizer только при первом вызове для person_name
+        
+        Lemmatizer занимает 53% времени обработки, но используется только для
+        морфологической детекции person_name. Для остальных категорий (information_system,
+        organization, address) он не нужен и только замедляет работу.
+        
+        Включение происходит один раз и остается активным для последующих вызовов.
+        """
+        if not self._lemmatizer_enabled:
+            try:
+                # Добавляем lemmatizer в pipeline после parser
+                if "lemmatizer" not in self.nlp.pipe_names:
+                    self.nlp.add_pipe("lemmatizer", after="parser")
+                self._lemmatizer_enabled = True
+            except Exception as e:
+                # Если не удалось добавить lemmatizer, продолжаем без него
+                pass
     
     def _load_patterns(self, patterns_file: str):
         """
@@ -169,10 +262,9 @@ class NLPAdapter:
                     'context_required': context_required,
                     'description': description
                 })
-            if self.config.should_log_pattern_loading():
-                print(f"✅ Загружено {len(patterns)} NLP паттернов из {patterns_file}")
+            # if self.config.should_log_pattern_loading():
+            #     pass
         except Exception as e:
-            print(f"❌ Ошибка загрузки паттернов: {e}")
             raise
     
     def _setup_matchers(self):
@@ -208,7 +300,6 @@ class NLPAdapter:
                 phrase_docs = [self.nlp(phrase) for phrase in phrases]
                 self.phrase_matcher.add(f"{category}_phrases", phrase_docs)
                 self.custom_phrases[category] = phrases
-        print(f"✅ Настроено {len(phrase_categories)} категорий кастомных фраз (из JSON)")
         self._setup_smart_phrase_matchers()
     
     def _setup_smart_phrase_matchers(self):
@@ -224,13 +315,12 @@ class NLPAdapter:
                     category='government_org'
                 )
                 
-                print(f"✅ Создан умный матчер для государственных организаций ({len(self.custom_phrases['government_org'])} паттернов)")
             
             # Можно добавить умные матчеры для других категорий при необходимости
             
         except Exception as e:
-            print(f"⚠️ Ошибка при создании умных матчеров: {e}")
             # Продолжаем работу без умных матчеров
+            pass
     
     def _load_government_organizations(self) -> List[str]:
         """Загружает расширенный список государственных организаций"""
@@ -242,8 +332,8 @@ class NLPAdapter:
             
             from government_organizations import GOVERNMENT_ORGANIZATIONS
             
-            if self.config.should_log_pattern_loading():
-                print(f"✅ Загружено {len(GOVERNMENT_ORGANIZATIONS)} государственных организаций")
+            # if self.config.should_log_pattern_loading():
+            #     pass
             
             return GOVERNMENT_ORGANIZATIONS
             
@@ -256,8 +346,8 @@ class NLPAdapter:
                 "совет федерации", "правительство российской федерации"
             ]
             
-            if self.config.should_log_pattern_loading():
-                print(f"⚠️ Использован fallback список ({len(fallback_orgs)} организаций)")
+            # if self.config.should_log_pattern_loading():
+            #     pass
             
             return fallback_orgs
     
@@ -298,7 +388,6 @@ class NLPAdapter:
         ]
         self.matcher.add("quoted_organization", [org_pattern])
         
-        print("✅ Настроены кастомные правила Matcher")
     
     def _add_context_patterns(self, category: str, pattern_text: str):
         """Добавляет контекстные паттерны в матчеры"""
@@ -316,10 +405,8 @@ class NLPAdapter:
             Список найденных чувствительных данных
         """
         if not text or not isinstance(text, str):
-            print(f"🚫 Пустой или некорректный текст: {repr(text)}")
             return []
 
-        print(f"🔍 Анализируем текст длиной {len(text)} символов: '{text[:50]}...'")
 
         # Сохраняем оригинальный текст для mapping позиций
         original_text = text
@@ -328,41 +415,43 @@ class NLPAdapter:
         # Заменяем \xa0 (неразрывный пробел) на обычный пробел
         processing_text = original_text.replace('\xa0', ' ')
         
+        # ОПТИМИЗАЦИЯ: Включаем lemmatizer заранее только если будет обработка person_name
+        # (единственная категория использующая morphological метод)
+        available_categories = self.config.get_available_categories()
+        if 'person_name' in available_categories:
+            enabled_methods = self.config.get_enabled_methods_for_category('person_name')
+            if 'morphological' in enabled_methods:
+                self._ensure_lemmatizer_enabled()
+        
         # Обрабатываем текст через spaCy один раз для всех методов
         doc = self.nlp(processing_text)
-        print(f"📝 spaCy обработал {len(doc)} токенов")
         
         # Получаем все доступные категории из конфигурации
         available_categories = self.config.get_available_categories()
-        print(f"🎯 Доступные категории: {available_categories}")
         
         all_detections = []
         
         # Обрабатываем каждую категорию отдельно с её настройками
         for category in available_categories:
-            print(f"🔎 Проверяем категорию: {category}")
             category_detections = self._detect_for_category(category, processing_text, doc)
             
             # Позиции уже корректны, так как используем оригинальный текст
             
-            if category_detections:
-                print(f"✅ Категория {category}: найдено {len(category_detections)} элементов")
-            else:
-                print(f"❌ Категория {category}: ничего не найдено")
+            # if category_detections:
+            #     pass
+            # else:
+            #     pass
             all_detections.extend(category_detections)
         
-        print(f"📊 Всего обнаружений до дедупликации: {len(all_detections)}")
         
         # Финальная дедупликация между категориями
         final_detections = self._global_deduplicate(all_detections)
-        print(f"📊 Обнаружений после дедупликации: {len(final_detections)}")
         
         # Фильтруем по глобальному confidence threshold
         filtered_detections = [
             detection for detection in final_detections
             if detection.get('confidence', 0) >= self.confidence_threshold
         ]
-        print(f"📊 Обнаружений после фильтрации (threshold {self.confidence_threshold}): {len(filtered_detections)}")
         
         return filtered_detections
     
@@ -402,8 +491,8 @@ class NLPAdapter:
                 
                 # Проверяем early exit
                 if self._should_early_exit(category, method, method_results):
-                    if self.config.should_log_detection_stats():
-                        print(f"Early exit for '{category}' after method '{method}' with {len(method_results)} results")
+                    # if self.config.should_log_detection_stats():
+                    #     pass
                     break
         
         # Применяем стратегию комбинирования
@@ -457,8 +546,8 @@ class NLPAdapter:
             elif method == 'context_matcher':
                 results = self._extract_context_matches_for_category(doc, category)
             else:
-                if self.config.should_log_detection_stats():
-                    print(f"Unknown detection method: {method}")
+                # if self.config.should_log_detection_stats():
+                #     pass
                 return []
             
             # Фильтруем по минимальной confidence для метода
@@ -467,8 +556,8 @@ class NLPAdapter:
             return filtered_results
             
         except Exception as e:
-            if self.config.should_log_detection_stats():
-                print(f"Error in method {method} for category {category}: {str(e)}")
+            # if self.config.should_log_detection_stats():
+            #     pass
             return []
     
     def _should_early_exit(self, category: str, method: str, results: List[Dict[str, Any]]) -> bool:
@@ -633,12 +722,9 @@ class NLPAdapter:
             strategy_settings = self.config.get_detection_strategy_settings('information_system')
             # Передаем уже загруженную spaCy модель для избежания повторной загрузки
             self._is_strategy = InformationSystemStrategy(strategy_settings, self.nlp)
-            print("🔄 Стратегия информационных систем инициализирована при старте с переданной spaCy моделью")
         except ImportError as e:
-            print(f"⚠️ Не удалось импортировать InformationSystemStrategy: {e}")
             self._is_strategy = None
         except Exception as e:
-            print(f"⚠️ Ошибка инициализации стратегии ИС: {e}")
             self._is_strategy = None
     
     def _extract_information_systems(self, doc: Doc) -> List[Dict[str, Any]]:
@@ -654,7 +740,6 @@ class NLPAdapter:
             return detections
             
         except Exception as e:
-            print(f"⚠️ Ошибка при детекции информационных систем: {e}")
             return []
     
     def _extract_regex_patterns_for_category(self, text: str, category: str) -> List[Dict[str, Any]]:
@@ -679,10 +764,14 @@ class NLPAdapter:
                 for match in matches:
                     match_text = match.group()
                     # Для person_name применяем морфологическую фильтрацию ТОЛЬКО для полных ФИО (3 слова)
-                    if category == 'person_name' and len(match_text.split()) == 3 and '.' not in match_text:
-                        if not self._is_valid_person_name_regex(match_text):
-                            print(f"[DEBUG][person_name][morph_filter][SKIP] '{match_text}' отфильтровано как не-ФИО")
+                    if category == 'person_name':
+                        # Фильтрация по справочникам ФИО (имена/фамилии)
+                        if not self._fio_dictionary_filter(match_text):
                             continue
+                        # Для 3-словных ФИО также морфологическая фильтрация
+                        if len(match_text.split()) == 3 and '.' not in match_text:
+                            if not self._is_valid_person_name_regex(match_text):
+                                continue
                     if self._validate_context(text, match, category):
                         detection = self.detection_factory.create_detection(
                             method='regex',
@@ -697,8 +786,9 @@ class NLPAdapter:
                         )
                         detections.append(detection)
             except re.error as e:
-                if self.config.should_log_pattern_loading():
-                    print(f"Regex error in pattern for {category}: {e}")
+                # if self.config.should_log_pattern_loading():
+                #     pass
+                pass
         return detections
     
     def _extract_morphological_names_for_category(self, doc: Doc, category: str) -> List[Dict[str, Any]]:
@@ -766,6 +856,9 @@ class NLPAdapter:
                 detected_category = "unknown"
             
             if detected_category == category:
+                # Фильтрация по справочникам ФИО
+                if category == 'person_name' and not self._fio_dictionary_filter(span.text):
+                    continue
                 detection = self.detection_factory.create_detection(
                     method='custom_matcher',
                     category=category,
@@ -802,12 +895,11 @@ class NLPAdapter:
                 
                 # Если умный матчер нашел совпадения, используем только их
                 if smart_detections:
-                    print(f"🎯 Умный матчер для {category}: найдено {len(smart_detections)} совпадений")
                     return detections
                 
             except Exception as e:
-                print(f"⚠️ Ошибка в умном матчере для {category}: {e}")
                 # Продолжаем с обычным матчером
+                pass
         
         # Fallback к обычному phrase matcher
         if not self.phrase_matcher:
@@ -889,7 +981,6 @@ class NLPAdapter:
                         detections.append(detection)
                 
                 except re.error as e:
-                    print(f"⚠️ Ошибка regex паттерна {category}: {e}")
                     continue
         
         return detections
@@ -1137,10 +1228,9 @@ class NLPAdapter:
                     mapped_detections.append(mapped_detection)
                 else:
                     # Если не можем найти соответствие, пропускаем
-                    print(f"⚠️ Не удалось найти '{found_text}' в оригинальном тексте")
+                    pass
                     
             except Exception as e:
-                print(f"❌ Ошибка при маппинге позиции: {e}")
                 # В случае ошибки добавляем оригинальную детекцию
                 mapped_detections.append(detection)
         

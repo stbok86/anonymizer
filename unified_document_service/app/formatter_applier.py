@@ -64,15 +64,14 @@ class FormatterApplier:
         Returns:
             Статистика применения замен
         """
-        print(f"📝 [FORMATTER_APPLIER] Получено замен для обработки: {len(replacements)}")
         
         # 🎯 НОРМАЛИЗАЦИЯ ЗАМЕН: обеспечиваем консистентные UUID
         normalized_replacements = self._normalize_replacements_with_centralized_uuids(replacements)
         
-        for i, match in enumerate(normalized_replacements[:5]):  # Показываем первые 5
-            print(f"📝 [FORMATTER_APPLIER] Замена {i+1}: '{match.get('original_value', 'N/A')}' → '{match.get('uuid', 'N/A')}'")
-        if len(normalized_replacements) > 5:
-            print(f"📝 [FORMATTER_APPLIER] ... и еще {len(replacements) - 5} замен")
+        # for i, match in enumerate(normalized_replacements[:5]):  # Показываем первые 5
+        #     pass
+        # if len(normalized_replacements) > 5:
+        #     pass
             
         if not replacements:
             return {
@@ -122,7 +121,6 @@ class FormatterApplier:
                 continue
         
         # 🎯 ДОПОЛНИТЕЛЬНАЯ ОБРАБОТКА: Headers & Footers ПОСЛЕ основного анонимизирования
-        print(f"📝 [FORMATTER_APPLIER] Начинаем дополнительную обработку заголовков и колонтитулов...")
         header_footer_stats = self._apply_replacements_to_headers_footers(doc, normalized_replacements)
         
         # Агрегируем статистику headers/footers
@@ -137,10 +135,8 @@ class FormatterApplier:
         
         stats['replacement_details'].extend(header_footer_stats['replacement_details'])
         
-        print(f"📝 [FORMATTER_APPLIER] Дополнительная обработка завершена. Замен в headers/footers: {header_footer_stats['total_replacements']}")
         
         # 🎯 ДОПОЛНИТЕЛЬНАЯ ОБРАБОТКА: Headers & Footers ПОСЛЕ основного анонимизирования
-        print(f"📝 [FORMATTER_APPLIER] Начинаем дополнительную обработку заголовков и колонтитулов...")
         header_footer_stats = self._apply_replacements_to_headers_footers(doc, normalized_replacements)
         
         # Агрегируем статистику headers/footers
@@ -155,7 +151,6 @@ class FormatterApplier:
         
         stats['replacement_details'].extend(header_footer_stats['replacement_details'])
         
-        print(f"📝 [FORMATTER_APPLIER] Дополнительная обработка завершена. Замен в headers/footers: {header_footer_stats['total_replacements']}")
         
         # 🎯 ВАЖНО: Сохраняем нормализованные замены для использования в отчетах
         # Убираем element для возможности JSON сериализации
@@ -223,24 +218,15 @@ class FormatterApplier:
             original_value = replacement.get('original_value', '')
             position = replacement.get('position', {})
             
-            print(f"\n🔧 [SINGLE_REPLACEMENT] Начинаем замену:")
-            print(f"🔧 [SINGLE_REPLACEMENT] Оригинал: '{original_value}'")
-            print(f"🔧 [SINGLE_REPLACEMENT] Element type: {type(element) if element else 'None'}")
-            print(f"🔧 [SINGLE_REPLACEMENT] Position: {position}")
-            print(f"🔧 [SINGLE_REPLACEMENT] Block ID: {replacement.get('block_id', 'N/A')}")
-            print(f"🔧 [SINGLE_REPLACEMENT] Category: {replacement.get('category', 'N/A')}")
             
             if element is None:
-                print(f"🔧 [SINGLE_REPLACEMENT] ❌ Element is None")
                 return False
                 
             if not original_value:
-                print(f"🔧 [SINGLE_REPLACEMENT] ❌ original_value is empty")
                 return False
                 
             # Дополнительная проверка для None значений
             if original_value is None:
-                print(f"🔧 [SINGLE_REPLACEMENT] ❌ original_value is None")
                 return False
             
             # 🎯 ЦЕНТРАЛИЗОВАННАЯ генерация UUID (игнорируем placeholder)
@@ -254,16 +240,6 @@ class FormatterApplier:
             else:
                 # Используем уже готовый UUID (если он реальный)
                 replacement_value = existing_uuid
-            
-            print(f"🔧 [SINGLE_REPLACEMENT] UUID замены: '{replacement_value}'")
-            
-            # Проверяем содержание элемента перед заменой
-            if hasattr(element, 'text'):
-                current_text = getattr(element, 'text', '') or ''
-                print(f"🔧 [SINGLE_REPLACEMENT] Текущий text: '{current_text}'")
-            
-            if hasattr(element, 'rows'):
-                print(f"🔧 [SINGLE_REPLACEMENT] Таблица с {len(element.rows)} строками")
             
 
             # --- SDT (lxml.etree._Element) ---
@@ -290,55 +266,40 @@ class FormatterApplier:
                         if original_value and original_value in current_text:
                             new_text = current_text.replace(original_value, replacement_value, 1)
                             text_element.text = new_text
-                            print(f"🔧 [SINGLE_REPLACEMENT][SDT] ✅ Замена в SDT: '{current_text}' → '{new_text}'")
                             replaced = True
                             break  # Только первое вхождение
                     if replaced:
                         return True
                     else:
-                        print(f"🔧 [SINGLE_REPLACEMENT][SDT] ❌ Значение '{original_value}' не найдено в SDT")
                         return False
                 except Exception as e:
-                    print(f"🔧 [SINGLE_REPLACEMENT][SDT] ❌ Ошибка при замене в SDT: {str(e)}")
                     return False
 
-            # --- Таблица ---
-            if hasattr(element, 'rows'):
-                print(f"🔧 [SINGLE_REPLACEMENT] Обрабатываем таблицу")
-                result = self._replace_in_table(element, original_value, replacement_value, position)
-                print(f"🔧 [SINGLE_REPLACEMENT] Результат замены в таблице: {result}")
+            # --- Ячейка таблицы (проверяем ПЕРВОЙ, т.к. _Cell тоже имеет .text) ---
+            if hasattr(element, 'paragraphs') and hasattr(element, '_element'):
+                # Это ячейка таблицы (_Cell объект)
+                result = self._replace_in_table_cell(element, original_value, replacement_value)
                 return result
             # --- Параграф ---
             elif hasattr(element, 'text'):
-                print(f"🔧 [SINGLE_REPLACEMENT] Обрабатываем параграф")
                 result = self._replace_in_paragraph(element, original_value, replacement_value, position)
-                print(f"🔧 [SINGLE_REPLACEMENT] Результат замены в параграфе: {result}")
                 return result
             # --- Общий случай ---
             else:
-                print(f"🔧 [SINGLE_REPLACEMENT] Общий случай замены")
                 current_text = getattr(element, 'text', '')
                 if current_text is None:
                     current_text = ''
-                print(f"🔧 [SINGLE_REPLACEMENT] Текущий текст элемента: '{current_text}'")
                 if original_value and original_value in current_text:
                     new_text = current_text.replace(original_value, replacement_value)
                     element.text = new_text
-                    print(f"🔧 [SINGLE_REPLACEMENT] ✅ Общая замена: '{current_text}' → '{new_text}'")
                     return True
                 else:
-                    print(f"🔧 [SINGLE_REPLACEMENT] ❌ Значение '{original_value}' не найдено в тексте '{current_text}'")
-                print(f"🔧 [SINGLE_REPLACEMENT] ❌ Замена не выполнена")
-                return False
+                    return False
             
         except Exception as e:
-            print(f"🔧 [SINGLE_REPLACEMENT] ❌ Ошибка при применении замены: {str(e)}")
             import traceback
-            print(f"🔧 [SINGLE_REPLACEMENT] Traceback: {traceback.format_exc()}")
-            return False
-            
-        except Exception as e:
-            print(f"Ошибка при применении замены: {str(e)}")
+            # print(f"❌ [REPLACEMENT_ERROR] {str(e)}")
+            # traceback.print_exc()
             return False
     
     def _normalize_text(self, text: str) -> str:
@@ -357,6 +318,11 @@ class FormatterApplier:
         text = text.replace('\u202F', ' ')  # узкий неразрывный пробел
         text = text.replace('\u3000', ' ')  # идеографический пробел
         
+        # Заменяем переносы строк и другие символы перевода строки на пробелы
+        text = text.replace('\n', ' ')
+        text = text.replace('\r', ' ')
+        text = text.replace('\t', ' ')
+        
         # Нормализуем пробелы
         return ' '.join(text.split())
 
@@ -374,50 +340,35 @@ class FormatterApplier:
             True если замена применена
         """
         try:
-            # print(f"🔧 [PARAGRAPH] Попытка замены: '{original_value}' → '{replacement_value}'")
-            # print(f"🔧 [PARAGRAPH] Информация о позиции: {position}")
             # Получаем полный текст параграфа для проверки
             paragraph_text = getattr(paragraph, 'text', '') or ''
-            # print(f"🔧 [PARAGRAPH] Полный текст параграфа: '{paragraph_text}'")
-            # print(f"🔧 [PARAGRAPH] Количество runs: {len(paragraph.runs)}")
             # Нормализуем текст для поиска
             original_value_normalized = self._normalize_text(original_value)
             paragraph_text_normalized = self._normalize_text(paragraph_text)
-            # print(f"🔧 [PARAGRAPH] Нормализованный искомый текст: '{original_value_normalized}'")
-            # print(f"🔧 [PARAGRAPH] Нормализованный текст параграфа: '{paragraph_text_normalized}'")
             if not original_value_normalized or original_value_normalized not in paragraph_text_normalized:
-                # print(f"🔧 [PARAGRAPH] ❌ Текст не найден после нормализации")
                 return False
             # Получаем целевую позицию для проверки
             target_position = position.get('start') if position else None
-            # print(f"🔧 [PARAGRAPH] Целевая позиция: {target_position}")
             # Если позиция указана, проверяем соответствие
             if target_position is not None:
                 # Ищем позицию текста в параграфе
                 text_position_in_paragraph = paragraph_text_normalized.find(original_value_normalized)
                 if text_position_in_paragraph == -1:
-                    # print(f"🔧 [PARAGRAPH] ❌ Текст не найден в параграфе")
                     return False
-                # print(f"🔧 [PARAGRAPH] Позиция текста в параграфе: {text_position_in_paragraph}")
-                # print(f"🔧 [PARAGRAPH] Целевая позиция в документе: {target_position}")
                 # Для параграфов используем менее строгую проверку позиции
                 # так как позиция может отличаться из-за разной структуры документа
                 position_match = True  # Для параграфов пока принимаем любую позицию
                 if not position_match:
-                    # print(f"🔧 [PARAGRAPH] ❌ Позиция не совпадает, пропускаем")
                     return False
                 else:
-                    # print(f"🔧 [PARAGRAPH] ✅ Позиция подходит для замены")
                     pass
             replacement_made = False
             # Стратегия 1: Прямой поиск с нормализацией в runs
             for i, run in enumerate(paragraph.runs):
                 run_text = run.text or ''
                 run_text_normalized = self._normalize_text(run_text)
-                # print(f"🔧 [PARAGRAPH] Run {i}: '{run_text}' (нормализован: '{run_text_normalized}')")
                 # Пробуем прямое совпадение
                 if original_value in run_text or original_value_normalized in run_text_normalized:
-                    # print(f"🔧 [PARAGRAPH] ✅ Найден в run {i}, заменяем")
                     # Заменяем в исходном тексте run'а
                     old_run_text = run.text
                     if original_value in run_text:
@@ -430,51 +381,27 @@ class FormatterApplier:
                     if self.highlight_replacements:
                         try:
                             run.font.highlight_color = self.replacement_color
-                            # print(f"🔧 [PARAGRAPH] ✅ Жёлтое выделение UUID применено к run {i}")
                         except Exception as e:
-                            # print(f"🔧 [PARAGRAPH] ⚠️ Не удалось применить выделение: {e}")
                             pass
-                    # print(f"🔧 [PARAGRAPH] ✅ Замена в run {i} завершена: '{old_run_text}' → '{run.text}'")
-                    # print(f"🔧 [PARAGRAPH] 🎯 Замена выполнена, выходим из поиска")
                     break  # Выходим после первой успешной замены
             # Стратегия 2: Если не нашли в отдельных runs, ищем в пересечении runs с нормализацией
             if not replacement_made and len(paragraph.runs) > 1:
-                # print(f"🔧 [PARAGRAPH] Стратегия 2: поиск в пересечении runs с нормализацией")
                 # Собираем текст из всех runs для точного поиска
                 full_text = ''.join(run.text for run in paragraph.runs)
                 full_text_normalized = self._normalize_text(full_text)
-                # print(f"🔧 [PARAGRAPH] Полный текст из runs: '{full_text}'")
-                # print(f"🔧 [PARAGRAPH] Нормализованный полный текст: '{full_text_normalized}'")
                 if original_value in full_text or original_value_normalized in full_text_normalized:
-                    # print(f"🔧 [PARAGRAPH] ✅ Найден в пересечении runs")
                     # Найдем позицию в нормализованном тексте
                     search_text = original_value if original_value in full_text else original_value_normalized
                     search_target = full_text if original_value in full_text else full_text_normalized
                     start_pos = search_target.find(search_text)
                     end_pos = start_pos + len(search_text)
-                    # print(f"🔧 [PARAGRAPH] Позиция в полном тексте: {start_pos}-{end_pos}")
-                    # print(f"🔧 [PARAGRAPH] Search text: '{search_text}'")
-                    # print(f"🔧 [PARAGRAPH] Search target: '{search_target}'")
-                    # print(f"🔧 [PARAGRAPH] Using normalized? {search_target == full_text_normalized}")
                     # Если мы работаем с нормализованным текстом, нужно найти соответствие в исходном
                     if search_target == full_text_normalized:
-                        # print(f"🔧 [PARAGRAPH] Вызываем _replace_in_normalized_runs")
                         replacement_made = self._replace_in_normalized_runs(paragraph, original_value, replacement_value)
                     else:
-                        # print(f"🔧 [PARAGRAPH] Вызываем _replace_across_runs")
                         replacement_made = self._replace_across_runs(paragraph, original_value, replacement_value, start_pos, end_pos)
-                else:
-                    # print(f"🔧 [PARAGRAPH] ❌ Текст не найден даже в полном тексте runs")
-                    pass
-            if replacement_made:
-                # print(f"🔧 [PARAGRAPH] ✅ Замена выполнена успешно")
-                pass
-            else:
-                # print(f"🔧 [PARAGRAPH] ❌ Замена не выполнена")
-                pass
             return replacement_made
         except Exception as e:
-            # print(f"🔧 [PARAGRAPH] ❌ Ошибка при замене в параграфе: {str(e)}")
             return False
     
     def _replace_with_normalization(self, run_text: str, original_value: str, replacement_value: str) -> str:
@@ -506,8 +433,6 @@ class FormatterApplier:
         """
         Замена текста, который найден только после нормализации пробелов
         """
-        print(f"🔧 [NORMALIZED_RUNS] Начинаем замену в нормализованном тексте")
-        print(f"🔧 [NORMALIZED_RUNS] Искомый текст: '{original_value}'")
         
         # Собираем полный текст и заменяем в нем
         full_text = ''.join(run.text for run in paragraph.runs)
@@ -516,19 +441,12 @@ class FormatterApplier:
         full_text_normalized = self._normalize_text(full_text)
         original_normalized = self._normalize_text(original_value)
         
-        print(f"🔧 [NORMALIZED_RUNS] Полный текст: '{full_text}'")
-        print(f"🔧 [NORMALIZED_RUNS] Нормализованный полный: '{full_text_normalized}'")
-        print(f"🔧 [NORMALIZED_RUNS] Нормализованный искомый: '{original_normalized}'")
-        
         if original_normalized not in full_text_normalized:
-            print(f"🔧 [NORMALIZED_RUNS] ❌ Текст не найден даже после нормализации")
             return False
         
         # Найдем позицию в нормализованном тексте
         normalized_start = full_text_normalized.find(original_normalized)
         normalized_end = normalized_start + len(original_normalized)
-        
-        print(f"🔧 [NORMALIZED_RUNS] Позиция в нормализованном тексте: {normalized_start}-{normalized_end}")
         
         # Теперь нужно найти соответствующую позицию в исходном тексте
         # Создадим карту соответствий между исходным и нормализованным текстом
@@ -561,10 +479,7 @@ class FormatterApplier:
                 break
         
         if original_start is None or original_end is None:
-            print(f"🔧 [NORMALIZED_RUNS] ❌ Не удалось найти границы в исходном тексте")
             return False
-        
-        print(f"🔧 [NORMALIZED_RUNS] Позиция в исходном тексте: {original_start}-{original_end}")
         
         # Теперь заменяем по runs используя позицию в исходном тексте
         return self._replace_across_runs(paragraph, original_value, replacement_value, original_start, original_end)
@@ -591,7 +506,6 @@ class FormatterApplier:
                         'text_end': min(len(run.text), end_pos - run_start)
                     })
                 current_pos = run_end
-            # print(f"🔧 [PARAGRAPH] Затронутые runs: {[r['index'] for r in affected_runs]}")
             if affected_runs:
                 replacement_made = False
                 # Заменяем текст в затронутых runs
@@ -614,14 +528,11 @@ class FormatterApplier:
                             # Заменяем середину
                             run.text = run.text[:text_start] + replacement_value + run.text[text_end:]
                         replacement_made = True
-                        # print(f"🔧 [PARAGRAPH] ✅ Run {run_info['index']} заменен")
                         # Применяем выделение к UUID
                         if self.highlight_replacements:
                             try:
                                 run.font.highlight_color = self.replacement_color
-                                # print(f"🔧 [PARAGRAPH] ✅ Жёлтое выделение UUID применено к run {run_info['index']}")
-                            except Exception as e:
-                                # print(f"🔧 [PARAGRAPH] ⚠️ Не удалось применить выделение: {e}")
+                            except Exception:
                                 pass
                     else:
                         # Остальные runs - убираем затронутый текст
@@ -637,120 +548,57 @@ class FormatterApplier:
                         else:
                             # Удаляем середину (редкий случай)
                             run.text = run.text[:text_start] + run.text[text_end:]
-                        # print(f"🔧 [PARAGRAPH] ✅ Run {run_info['index']} обрезан")
                         # Применяем выделение, если в run есть текст
                         if self.highlight_replacements and run.text.strip():
                             try:
                                 run.font.highlight_color = self.replacement_color
-                                # print(f"🔧 [PARAGRAPH] ✅ Выделение применено к обрезанному run {run_info['index']}")
-                            except Exception as e:
-                                # print(f"🔧 [PARAGRAPH] ⚠️ Не удалось применить выделение: {e}")
+                            except Exception:
                                 pass
                 return replacement_made
             return False
         except Exception as e:
-            # print(f"🔧 [PARAGRAPH] ❌ Ошибка при замене через runs: {str(e)}")
             return False
 
-    def _replace_in_table(self, table, original_value: str, replacement_value: str, position_info: dict = None) -> bool:
+
+    def _replace_in_table_cell(self, cell, original_value: str, replacement_value: str) -> bool:
         """
-        Замена текста в таблице
+        Замена текста в отдельной ячейке таблицы (новый формат блоков)
         
         Args:
-            table: Таблица документа
+            cell: Объект ячейки таблицы (_Cell)
             original_value: Исходное значение
             replacement_value: Замещающее значение
-            position_info: Информация о позиции для точной замены (опционально)
             
         Returns:
             True если замена применена
         """
         try:
-            print(f"🔧 [TABLE] Начало замены в таблице: '{original_value}' → '{replacement_value}'")
-            print(f"🔧 [TABLE] Информация о позиции: {position_info}")
-            replacement_made = False
-            
-            # КРИТИЧНО: Позиция уже относительная к блоку (таблице), не нужно пересчитывать!
-            target_position = position_info.get('start') if position_info else None
-            
-            # Извлекаем весь текст таблицы для поиска позиции
-            table_text = ""
-            cell_positions = []  # Мапим позиции на ячейки
-            
-            for row_idx, row in enumerate(table.rows):
-                for cell_idx, cell in enumerate(row.cells):
-                    cell_text = getattr(cell, 'text', '') or ''
-                    cell_start = len(table_text)
-                    table_text += cell_text
-                    cell_end = len(table_text)
-                    
-                    cell_positions.append({
-                        'row': row_idx,
-                        'col': cell_idx,
-                        'start': cell_start,
-                        'end': cell_end,
-                        'cell': cell,
-                        'text': cell_text
-                    })
-                    
-                    # Добавляем разделитель как в BlockBuilder
-                    if cell_idx < len(row.cells) - 1:
-                        table_text += " | "
-                    
-                # Новая строка после каждой строки таблицы
-                table_text += "\n"
-            
-            print(f"🔧 [TABLE] Текст таблицы ({len(table_text)} символов): '{table_text[:100]}...'")
-            print(f"🔧 [TABLE] Ищем '{original_value}' на позиции {target_position}")
-            
-            # Находим ячейку по позиции
-            # КРИТИЧНО: Нормализуем текст для поиска (заменяем \xa0 на обычный пробел)
+            # Нормализуем искомый текст
             normalized_original = self._normalize_text(original_value)
+            cell_text = ''.join(p.text for p in cell.paragraphs)
+            normalized_cell_text = self._normalize_text(cell_text)
             
-            target_cell = None
-            for cell_info in cell_positions:
-                normalized_cell_text = self._normalize_text(cell_info['text'])
-                if normalized_original in normalized_cell_text:
-                    # Если позиция не указана, берём первую найденную
-                    if target_position is None:
-                        target_cell = cell_info
-                        print(f"🔧 [TABLE] ✅ Найден текст в ячейке [{cell_info['row']}][{cell_info['col']}] (без проверки позиции)")
-                        break
-                    else:
-                        # Проверяем что позиция попадает в диапазон ячейки
-                        if cell_info['start'] <= target_position < cell_info['end']:
-                            target_cell = cell_info
-                            print(f"🔧 [TABLE] ✅ Найден текст в ячейке [{cell_info['row']}][{cell_info['col']}] на позиции {target_position}")
-                            break
-            
-            if not target_cell:
-                print(f"🔧 [TABLE] ❌ Текст '{original_value}' не найден в таблице")
+            # Проверяем наличие текста
+            if normalized_original not in normalized_cell_text:
                 return False
             
-            # Заменяем в найденной ячейке
-            cell = target_cell['cell']
+            # Проходим по параграфам ячейки
             for para_idx, paragraph in enumerate(cell.paragraphs):
                 paragraph_text = getattr(paragraph, 'text', '') or ''
-                # Проверяем с нормализацией текста
-                if original_value and (original_value in paragraph_text or 
-                                      normalized_original in self._normalize_text(paragraph_text)):
-                    print(f"🔧 [TABLE] Замена в параграфе {para_idx} ячейки [{target_cell['row']}][{target_cell['col']}]")
-                    cell_replacement_made = self._replace_in_paragraph(
+                
+                # Проверяем с нормализацией
+                if original_value in paragraph_text or normalized_original in self._normalize_text(paragraph_text):
+                    replacement_made = self._replace_in_paragraph(
                         paragraph, original_value, replacement_value, {}
                     )
-                    if cell_replacement_made:
-                        replacement_made = True
-                        print(f"🔧 [TABLE] ✅ Замена выполнена успешно!")
+                    
+                    if replacement_made:
                         return True
-                    else:
-                        print(f"🔧 [TABLE] ❌ Замена не удалась")
             
-            return replacement_made
+            return False
             
         except Exception as e:
-            print(f"🔧 [TABLE] ❌ Ошибка замены в таблице: {str(e)}")
             import traceback
-            print(f"🔧 [TABLE] Traceback: {traceback.format_exc()}")
             return False
     
     def _generate_replacement_value(self, original_value: str, category: str, existing_uuid: str = None) -> str:
@@ -765,14 +613,11 @@ class FormatterApplier:
         Returns:
             UUID для замещения
         """
-        
         # ВСЕГДА используем централизованный детерминистический UUID
-        # Специальная логика для contract_number и information_system ОТКЛЮЧЕНА
         return self.uuid_mapper.get_uuid_for_text(original_value, category)
     
     def _generate_contract_number_replacement(self, original_number: str) -> str:
         """Генерация замещающего значения для номеров контрактов с сохранением структуры"""
-        
         # Получаем базовый UUID для консистентности
         base_uuid = self.uuid_mapper.get_uuid_for_text(original_number, 'contract_number')
         short_id = base_uuid.replace('-', '')[:8].upper()
@@ -792,7 +637,6 @@ class FormatterApplier:
     
     def _generate_information_system_replacement(self, original_value: str) -> str:
         """Генерация замещающего значения для информационных систем"""
-        
         # Если есть анонимизированный текст с плейсхолдером
         if '[SYSTEM_ID]' in original_value:
             # Заменяем плейсхолдер на короткий UUID
@@ -896,10 +740,10 @@ class FormatterApplier:
         Returns:
             Полная статистика анонимизации
         """
-        print(f"🎆 [COMPLETE_ANONYMIZATION] Начало полной анонимизации")
-        print(f"📄 Input: {docx_path}")
-        print(f"📄 Output: {output_path}")
-        print(f"🎯 Замен для обработки: {len(replacements)}")
+        # print(f"🎆 [COMPLETE_ANONYMIZATION] Начало полной анонимизации")
+        # print(f"📄 Input: {docx_path}")
+        # print(f"📄 Output: {output_path}")
+        # print(f"🎯 Замен для обработки: {len(replacements)}")
         
         total_stats = {
             'total_replacements': 0,
@@ -921,7 +765,7 @@ class FormatterApplier:
             import os
             
             # Этап 1: Обработка основного содержимого документа
-            print(f"🎆 [PHASE 1] Обработка основного содержимого документа")
+            # print(f"🎆 [PHASE 1] Обработка основного содержимого документа")
             
             # Загружаем документ
             doc = Document(docx_path)
@@ -938,10 +782,9 @@ class FormatterApplier:
                 doc.save(temp_file.name)
                 intermediate_docx = temp_file.name
             
-            print(f"🎆 [PHASE 1] ✅ Завершено. Замен: {content_stats['total_replacements']}")
             
             # Этап 2: Обработка метаданных
-            print(f"🎆 [PHASE 2] Обработка метаданных документа")
+            # print(f"🎆 [PHASE 2] Обработка метаданных документа")
             
             metadata_handler = DocxMetadataHandler(intermediate_docx)
             
@@ -962,9 +805,9 @@ class FormatterApplier:
                     'sensitive_found': len(sensitive_metadata),
                     'success': True
                 }
-                print(f"🎆 [PHASE 2] ✅ Завершено. Замен в метаданных: {len(sensitive_metadata)}")
+                # print(f"🎆 [PHASE 2] ✅ Завершено. Замен в метаданных: {len(sensitive_metadata)}")
             else:
-                print(f"🎆 [PHASE 2] ⚠️ Ошибка при обработке метаданных")
+                # print(f"🎆 [PHASE 2] ⚠️ Ошибка при обработке метаданных")
                 # В случае ошибки копируем промежуточный результат
                 import shutil
                 shutil.copy2(intermediate_docx, output_path)
@@ -1000,20 +843,20 @@ class FormatterApplier:
                     'success': True
                 })
             
-            print(f"🎆 [COMPLETE_ANONYMIZATION] ✅ ПОЛНАЯ АНОНИМИЗАЦИЯ ЗАВЕРШЕНА")
-            print(f"📈 Общий итог:")
-            print(f"  🔢 Всего замен: {total_stats['total_replacements']}")
-            print(f"  📄 Замен в документе: {content_stats['total_replacements']}")
-            print(f"  📄 Замен в метаданных: {total_stats['metadata_replacements']}")
-            print(f"  📝 Обработано блоков: {total_stats['blocks_processed']}")
-            print(f"  📝 Headers/Footers: {total_stats['headers_footers_processed']}")
+            # print(f"🎆 [COMPLETE_ANONYMIZATION] ✅ ПОЛНАЯ АНОНИМИЗАЦИЯ ЗАВЕРШЕНА")
+            # print(f"📈 Общий итог:")
+            # print(f"  🔢 Всего замен: {total_stats['total_replacements']}")
+            # print(f"  📄 Замен в документе: {content_stats['total_replacements']}")
+            # print(f"  📄 Замен в метаданных: {total_stats['metadata_replacements']}")
+            # print(f"  📝 Обработано блоков: {total_stats['blocks_processed']}")
+            # print(f"  📝 Headers/Footers: {total_stats['headers_footers_processed']}")
             
             return total_stats
             
         except Exception as e:
-            print(f"🎆 [COMPLETE_ANONYMIZATION] ❌ Ошибка при полной анонимизации: {str(e)}")
+            # print(f"🎆 [COMPLETE_ANONYMIZATION] ❌ Ошибка при полной анонимизации: {str(e)}")
             import traceback
-            print(f"🎆 [COMPLETE_ANONYMIZATION] Traceback: {traceback.format_exc()}")
+            traceback.print_exc()  # Keep only traceback for debugging
             
             # Возвращаем пустую статистику
             return {
@@ -1052,62 +895,74 @@ class FormatterApplier:
                 block_id = replacement.get('block_id', '')
                 if any(block_type in block_id for block_type in ['header_', 'footer_']):
                     header_footer_replacements.append(replacement)
-            
-            print(f"🔧 [HEADERS_FOOTERS] Найдено замен для headers/footers: {len(header_footer_replacements)}")
-            
+
+            print(f"[DEBUG] HEADER/FOOTER: Найдено {len(header_footer_replacements)} замен для обработки в headers/footers")
+            for i, r in enumerate(header_footer_replacements):
+                print(f"  {i+1}. block_id={r.get('block_id')}, category={r.get('category')}, original='{r.get('original_value')}', uuid='{r.get('uuid')}'")
+
             if not header_footer_replacements:
-                print(f"🔧 [HEADERS_FOOTERS] ⚠️ Нет замен для headers/footers")
                 return stats
-            
+
             # Обрабатываем каждую секцию документа
             for section_idx, section in enumerate(doc.sections):
-                print(f"🔧 [HEADERS_FOOTERS] Обрабатываем секцию {section_idx}")
-                
+                print(f"[DEBUG] HEADER/FOOTER: Обработка секции {section_idx}")
                 # Обрабатываем header секции
                 if section.header:
-                    header_stats = self._apply_replacements_to_header_footer(
-                        section.header, header_footer_replacements, section_idx, 'header'
-                    )
-                    stats['total_replacements'] += header_stats['replacements_made']
-                    stats['replacement_details'].extend(header_stats['details'])
-                    
-                    # Подсчет по категориям
-                    for replacement in header_footer_replacements:
-                        if replacement.get('block_id', '').startswith(f'header_{section_idx}'):
-                            category = replacement.get('category', 'unknown')
-                            if category not in stats['categories']:
-                                stats['categories'][category] = 0
-                            stats['categories'][category] += 1
-                    
-                    if header_stats['replacements_made'] > 0:
-                        stats['headers_footers_processed'] += 1
-                
+                    try:
+                        print(f"[DEBUG] HEADER: Обработка header секции {section_idx}")
+                        header_stats = self._apply_replacements_to_header_footer(
+                            section.header, header_footer_replacements, section_idx, 'header'
+                        )
+                        print(f"[DEBUG] HEADER: Результат: {header_stats['replacements_made']} замен")
+                        stats['total_replacements'] += header_stats['replacements_made']
+                        stats['replacement_details'].extend(header_stats['details'])
+                        # Подсчет по категориям
+                        for replacement in header_footer_replacements:
+                            if replacement.get('block_id', '').startswith(f'header_{section_idx}'):
+                                category = replacement.get('category', 'unknown')
+                                if category not in stats['categories']:
+                                    stats['categories'][category] = 0
+                                stats['categories'][category] += 1
+                        if header_stats['replacements_made'] > 0:
+                            stats['headers_footers_processed'] += 1
+                    except Exception as e:
+                        import traceback
+                        print(f"[ERROR] HEADER: Ошибка при замене: {e}")
+                        traceback.print_exc()
+                        print(f"[ERROR] HEADER: section_idx={section_idx}, replacements={header_footer_replacements}")
+
                 # Обрабатываем footer секции
                 if section.footer:
-                    footer_stats = self._apply_replacements_to_header_footer(
-                        section.footer, header_footer_replacements, section_idx, 'footer'
-                    )
-                    stats['total_replacements'] += footer_stats['replacements_made']
-                    stats['replacement_details'].extend(footer_stats['details'])
-                    
-                    # Подсчет по категориям
-                    for replacement in header_footer_replacements:
-                        if replacement.get('block_id', '').startswith(f'footer_{section_idx}'):
-                            category = replacement.get('category', 'unknown')
-                            if category not in stats['categories']:
-                                stats['categories'][category] = 0
-                            stats['categories'][category] += 1
-                    
-                    if footer_stats['replacements_made'] > 0:
-                        stats['headers_footers_processed'] += 1
-            
-            print(f"🔧 [HEADERS_FOOTERS] ✅ Обработка завершена. Всего замен: {stats['total_replacements']}")
+                    try:
+                        print(f"[DEBUG] FOOTER: Обработка footer секции {section_idx}")
+                        footer_stats = self._apply_replacements_to_header_footer(
+                            section.footer, header_footer_replacements, section_idx, 'footer'
+                        )
+                        print(f"[DEBUG] FOOTER: Результат: {footer_stats['replacements_made']} замен")
+                        stats['total_replacements'] += footer_stats['replacements_made']
+                        stats['replacement_details'].extend(footer_stats['details'])
+                        # Подсчет по категориям
+                        for replacement in header_footer_replacements:
+                            if replacement.get('block_id', '').startswith(f'footer_{section_idx}'):
+                                category = replacement.get('category', 'unknown')
+                                if category not in stats['categories']:
+                                    stats['categories'][category] = 0
+                                stats['categories'][category] += 1
+                        if footer_stats['replacements_made'] > 0:
+                            stats['headers_footers_processed'] += 1
+                    except Exception as e:
+                        import traceback
+                        print(f"[ERROR] FOOTER: Ошибка при замене: {e}")
+                        traceback.print_exc()
+                        print(f"[ERROR] FOOTER: section_idx={section_idx}, replacements={header_footer_replacements}")
+
             return stats
-            
+
         except Exception as e:
-            print(f"🔧 [HEADERS_FOOTERS] ❌ Ошибка при обработке headers/footers: {str(e)}")
             import traceback
-            print(f"🔧 [HEADERS_FOOTERS] Traceback: {traceback.format_exc()}")
+            print(f"[DEBUG] HEADER/FOOTER: Ошибка: {e}")
+            traceback.print_exc()
+            print(f"[DEBUG] HEADER/FOOTER: replacements={replacements}")
             return stats
     
     def _apply_replacements_to_header_footer(self, container, replacements: List[Dict], 
@@ -1130,7 +985,6 @@ class FormatterApplier:
         }
         
         try:
-            print(f"🔧 [{container_type.upper()}] Обработка {container_type} секции {section_idx}")
             
             # Фильтруем замены для данного конкретного контейнера
             relevant_replacements = []
@@ -1139,7 +993,6 @@ class FormatterApplier:
                 if block_id.startswith(f'{container_type}_{section_idx}'):
                     relevant_replacements.append(replacement)
             
-            print(f"🔧 [{container_type.upper()}] Найдено релевантных замен: {len(relevant_replacements)}")
             
             if not relevant_replacements:
                 return container_stats
@@ -1150,13 +1003,11 @@ class FormatterApplier:
             # Применяем замены к параграфам в контейнере
             for paragraph in container.paragraphs:
                 paragraph_text = getattr(paragraph, 'text', '') or ''
-                print(f"🔧 [{container_type.upper()}] Параграф: '{paragraph_text[:100]}{'...' if len(paragraph_text) > 100 else ''}'")
                 
                 for replacement in relevant_replacements:
                     original_value = replacement.get('original_value', '')
                     
                     if original_value and original_value in paragraph_text:
-                        print(f"🔧 [{container_type.upper()}] ✅ Найден текст для замены: '{original_value}'")
                         
                         # Применяем замену используя существующий метод
                         success = self._replace_in_paragraph(
@@ -1176,7 +1027,6 @@ class FormatterApplier:
                                 'section_idx': section_idx,
                                 'success': True
                             })
-                            print(f"🔧 [{container_type.upper()}] ✅ Замена выполнена успешно")
                         else:
                             container_stats['details'].append({
                                 'uuid': replacement.get('uuid'),
@@ -1187,7 +1037,6 @@ class FormatterApplier:
                                 'success': False,
                                 'error': 'Не удалось выполнить замену в параграфе'
                             })
-                            print(f"🔧 [{container_type.upper()}] ❌ Замена не выполнена")
             
             # 🎯 КРИТИЧНО: Обработка SDT элементов (Structured Document Tags)
             # Эти элементы часто содержат динамические данные в заголовках
@@ -1195,11 +1044,9 @@ class FormatterApplier:
             container_stats['replacements_made'] += sdt_stats['replacements_made']
             container_stats['details'].extend(sdt_stats['details'])
             
-            print(f"🔧 [{container_type.upper()}] Итого замен в контейнере: {container_stats['replacements_made']}")
             return container_stats
             
         except Exception as e:
-            print(f"🔧 [{container_type.upper()}] ❌ Ошибка при обработке контейнера: {str(e)}")
             return container_stats
     
     def _apply_replacements_to_sdt_elements(self, container, replacements: List[Dict], 
@@ -1223,7 +1070,6 @@ class FormatterApplier:
         }
         
         try:
-            print(f"🔧 [SDT-{container_type.upper()}] Поиск SDT элементов в {container_type} секции {section_idx}")
             
             # Ищем SDT элементы в XML структуре контейнера
             if hasattr(container, '_element'):
@@ -1235,7 +1081,6 @@ class FormatterApplier:
                     # Если ошибка - используем xpath без namespaces (для BaseOxmlElement)
                     sdt_elements = container._element.xpath('.//w:sdt')
                 
-                print(f"🔧 [SDT-{container_type.upper()}] Найдено SDT элементов: {len(sdt_elements)}")
                 
                 for sdt_idx, sdt_element in enumerate(sdt_elements):
                     # Извлекаем текст из SDT элемента
@@ -1248,14 +1093,12 @@ class FormatterApplier:
                     
                     for text_element in text_elements:
                         current_text = text_element.text or ''
-                        print(f"🔧 [SDT-{container_type.upper()}] SDT текст: '{current_text}'")
                         
                         # Ищем соответствующие замены
                         for replacement in replacements:
                             original_value = replacement.get('original_value', '')
                             
                             if original_value and original_value in current_text:
-                                print(f"🔧 [SDT-{container_type.upper()}] ✅ Найден текст для замены в SDT: '{original_value}'")
                                 
                                 # Выполняем замену в SDT элементе
                                 new_text = current_text.replace(original_value, replacement.get('uuid', ''), 1)
@@ -1272,12 +1115,9 @@ class FormatterApplier:
                                     'success': True
                                 })
                                 
-                                print(f"🔧 [SDT-{container_type.upper()}] ✅ Замена в SDT выполнена: '{current_text}' → '{new_text}'")
                                 break  # Заменяем только первое вхождение
             
-            print(f"🔧 [SDT-{container_type.upper()}] Замен в SDT элементах: {sdt_stats['replacements_made']}")
             return sdt_stats
             
         except Exception as e:
-            print(f"🔧 [SDT-{container_type.upper()}] ❌ Ошибка при обработке SDT элементов: {str(e)}")
             return sdt_stats

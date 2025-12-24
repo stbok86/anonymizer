@@ -131,7 +131,7 @@ class RegexEngine(DetectionEngine):
                     detections.append(detection)
                     
             except re.error as e:
-                print(f"❌ Ошибка в regex правиле {rule.id}: {e}")
+                print(f"[ERROR] Ошибка в regex правиле {rule.id}: {e}")
                 continue
                 
         return detections
@@ -442,11 +442,11 @@ class RuleLoader:
                     loaded_count += 1
                     
                 except Exception as e:
-                    print(f"❌ Ошибка загрузки правила из строки {loaded_count}: {e}")
+                    print(f"[ERROR] Ошибка загрузки правила из строки {loaded_count}: {e}")
                     continue
             
             return loaded_count
             
         except Exception as e:
-            print(f"❌ Ошибка загрузки файла {file_path}: {e}")
+            print(f"[ERROR] Ошибка загрузки файла {file_path}: {e}")
             return 0

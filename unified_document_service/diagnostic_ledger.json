@@ -1,0 +1,922 @@
+{
+  "timestamp": "2025-12-04T17:25:59.289770",
+  "total_matches": 30,
+  "replacement_statistics": {
+    "total_replacements": 29,
+    "categories": {
+      "inn": 2,
+      "information_system": 13,
+      "organization": 5,
+      "person_name": 3,
+      "contract_number": 5,
+      "email": 3
+    },
+    "blocks_processed": 14,
+    "replacement_details": [
+      {
+        "uuid": "7a344d29-0a6b-4937-813f-e79564e5fa26",
+        "category": "inn",
+        "original_value": "312822699534",
+        "success": true
+      },
+      {
+        "uuid": "5b0e8470-4469-4c66-996e-dd3d69d39836",
+        "category": "information_system",
+        "original_value": "ЕИСУФХД",
+        "success": true
+      },
+      {
+        "uuid": "21ddb28b-439b-4803-87a5-043ce71f75e1",
+        "category": "inn",
+        "original_value": "312822699534",
+        "success": true
+      },
+      {
+        "uuid": "c1b5e170-4f46-4a4e-8b8b-1c81deb98b72",
+        "category": "information_system",
+        "original_value": "ЕИСУФХД",
+        "success": true
+      },
+      {
+        "uuid": "b2359de6-f2f8-490e-a723-630a9b488f8a",
+        "category": "organization",
+        "original_value": "МИНИСТЕРСТВО ИНФОРМАЦИОННОГО РАЗВИТИЯ И СВЯЗИ",
+        "success": true
+      },
+      {
+        "uuid": "8182f57e-4df3-49ec-b0f3-6efe5ea98ef6",
+        "category": "person_name",
+        "original_value": "К. С. Мясников",
+        "success": true
+      },
+      {
+        "uuid": "cb9ea865-6f12-4c68-84fd-5fd303c3052a",
+        "category": "person_name",
+        "original_value": "А. С. Щукина",
+        "success": true
+      },
+      {
+        "uuid": "df87b4b2-a9b4-44f7-bbe6-ef4d0d3f6d7c",
+        "category": "organization",
+        "original_value": "ООО «КАМА Технологии»",
+        "success": true
+      },
+      {
+        "uuid": "6422d4ad-e581-4421-9529-48d6418f9a19",
+        "category": "organization",
+        "original_value": "Министерства информационного развития и связи Пермского края",
+        "success": true
+      },
+      {
+        "uuid": "86c2e8bf-2eb7-4c15-8d5e-a4f4b9885345",
+        "category": "information_system",
+        "original_value": "ЕДИНАЯ ИНФОРМАЦИОННАЯ СИСТЕМА УПРАВЛЕНИЯ ФИНАНСОВО-ХОЗЯЙСТВЕННОЙ ДЕЯТЕЛЬНОСТЬЮ ОРГАНИЗАЦИЙ БЮДЖЕТНОЙ СФЕРЫ ПЕРМСКОГО КРАЯ",
+        "success": true
+      },
+      {
+        "uuid": "0567224f-9ed0-4c45-bd27-213e970b8631",
+        "category": "information_system",
+        "original_value": "ЕИС УФХД ПК",
+        "success": true
+      },
+      {
+        "uuid": "bf750b9a-ccc3-44b6-8b0a-d812c7b3f447",
+        "category": "information_system",
+        "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "success": true
+      },
+      {
+        "uuid": "caf8054a-5dfe-414f-ab57-2155452c32d0",
+        "category": "contract_number",
+        "original_value": "Государственный контракт от 14 августа 2023 г. № 13/ОК-2023",
+        "success": true
+      },
+      {
+        "uuid": "b231de24-78d7-4ad4-bd9a-5ba34423d554",
+        "category": "person_name",
+        "original_value": "В. В. Евтушенко",
+        "success": true
+      },
+      {
+        "uuid": "5cef6d0f-78aa-4e9d-8960-19d6dc033a61",
+        "category": "organization",
+        "original_value": "ГБУ ПК «Центр информационного развития Пермского края»",
+        "success": true
+      },
+      {
+        "uuid": "a4340b16-2a81-440e-be98-f4f02a550aab",
+        "category": "contract_number",
+        "original_value": "Контракту от 14 августа 2023 г. № 13/ОК-2023",
+        "success": true
+      },
+      {
+        "uuid": "c4c167e7-0ee7-4ed7-b09a-dce4d7f39ce5",
+        "category": "information_system",
+        "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "success": true
+      },
+      {
+        "uuid": "ae2b681d-8dde-49a5-8819-f13603cc1a93",
+        "category": "information_system",
+        "original_value": "ЕИС УФХД ПК",
+        "success": true
+      },
+      {
+        "uuid": "ac6ed712-761e-411a-851f-b8cdc844f4d5",
+        "category": "information_system",
+        "original_value": "ЕИС УФХД ПК",
+        "success": true
+      },
+      {
+        "uuid": "5efdb9f1-b856-4ab1-bf3f-50c97c6aad9b",
+        "category": "organization",
+        "original_value": "Общество с ограниченной ответственностью «КАМА Технологии»",
+        "success": true
+      },
+      {
+        "uuid": "91bda9b0-a7e7-4f42-8940-a7150a5f476e",
+        "category": "information_system",
+        "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "success": true
+      },
+      {
+        "uuid": "c59b6705-dfcb-4bff-90bf-5dae61e77537",
+        "category": "contract_number",
+        "original_value": "Государственному контракту от 14 августа 2023 г. № 13/ОК-2023",
+        "success": true
+      },
+      {
+        "uuid": "74571edd-37da-448a-8b45-d8f217afb1a6",
+        "category": "information_system",
+        "original_value": "Единая информационная система управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "success": true
+      },
+      {
+        "uuid": "7e4555f4-f085-4757-89a7-e46070c168b6",
+        "category": "information_system",
+        "original_value": "ЕИС УФХД ПК",
+        "success": true
+      },
+      {
+        "uuid": "4a677d4d-f1ec-4872-8596-48e43884b778",
+        "category": "information_system",
+        "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "success": true
+      },
+      {
+        "uuid": "b48cc37a-1c33-4dff-9023-7e5572f7e566",
+        "category": "contract_number",
+        "original_value": "Государственного контракта от 14 августа 2023 г. № 13/ОК-2023",
+        "success": true
+      },
+      {
+        "uuid": "33c33c42-aded-4dd7-a5cd-a177a90e4dd4",
+        "category": "contract_number",
+        "original_value": "Контракту от 14 августа 2023 г. № 13/ОК-2023",
+        "success": true
+      },
+      {
+        "uuid": "2455fb6a-ad9d-48d7-ba28-8c53e91f6e42",
+        "category": "information_system",
+        "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "success": true
+      },
+      {
+        "uuid": "7dfe30c6-a02e-4a69-a7a7-0daead4bc29b",
+        "category": "email",
+        "original_value": "stbok@yandex.ru",
+        "success": true
+      }
+    ],
+    "headers_footers_processed": 0,
+    "normalized_replacements": [
+      {
+        "block_id": "header_sdt_1_0",
+        "original_value": "ЕИСУФХД",
+        "position": {
+          "start": 7,
+          "end": 14
+        },
+        "category": "information_system",
+        "confidence": 0.9,
+        "source": "nlp_service",
+        "method": "complex_abbreviation",
+        "uuid": "5b0e8470-4469-4c66-996e-dd3d69d39836"
+      },
+      {
+        "block_id": "header_sdt_2_0",
+        "original_value": "ЕИСУФХД",
+        "position": {
+          "start": 8,
+          "end": 15
+        },
+        "category": "information_system",
+        "confidence": 0.9,
+        "source": "nlp_service",
+        "method": "complex_abbreviation",
+        "uuid": "c1b5e170-4f46-4a4e-8b8b-1c81deb98b72"
+      },
+      {
+        "block_id": "paragraph_0",
+        "original_value": "МИНИСТЕРСТВО ИНФОРМАЦИОННОГО РАЗВИТИЯ И СВЯЗИ",
+        "position": {
+          "start": 0,
+          "end": 45
+        },
+        "category": "organization",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "regex",
+        "uuid": "b2359de6-f2f8-490e-a723-630a9b488f8a"
+      },
+      {
+        "block_id": "table_0",
+        "original_value": "К. С. Мясников",
+        "position": {
+          "start": 233,
+          "end": 247
+        },
+        "category": "person_name",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "custom_matcher",
+        "uuid": "8182f57e-4df3-49ec-b0f3-6efe5ea98ef6"
+      },
+      {
+        "block_id": "table_0",
+        "original_value": "А. С. Щукина",
+        "position": {
+          "start": 195,
+          "end": 207
+        },
+        "category": "person_name",
+        "confidence": 0.7,
+        "source": "nlp_service",
+        "method": "regex",
+        "uuid": "cb9ea865-6f12-4c68-84fd-5fd303c3052a"
+      },
+      {
+        "block_id": "table_0",
+        "original_value": "Министерства информационного развития и связи Пермского края",
+        "position": {
+          "start": 63,
+          "end": 123
+        },
+        "category": "organization",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "regex",
+        "uuid": "6422d4ad-e581-4421-9529-48d6418f9a19"
+      },
+      {
+        "block_id": "table_0",
+        "original_value": "ООО «КАМА Технологии»",
+        "position": {
+          "start": 150,
+          "end": 171
+        },
+        "category": "organization",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "regex",
+        "uuid": "df87b4b2-a9b4-44f7-bbe6-ef4d0d3f6d7c"
+      },
+      {
+        "block_id": "paragraph_2",
+        "original_value": "ЕДИНАЯ ИНФОРМАЦИОННАЯ СИСТЕМА УПРАВЛЕНИЯ ФИНАНСОВО-ХОЗЯЙСТВЕННОЙ ДЕЯТЕЛЬНОСТЬЮ ОРГАНИЗАЦИЙ БЮДЖЕТНОЙ СФЕРЫ ПЕРМСКОГО КРАЯ",
+        "position": {
+          "start": 0,
+          "end": 121
+        },
+        "category": "information_system",
+        "confidence": 0.8,
+        "source": "nlp_service",
+        "method": "information_system_regex",
+        "uuid": "86c2e8bf-2eb7-4c15-8d5e-a4f4b9885345"
+      },
+      {
+        "block_id": "paragraph_3",
+        "original_value": "ЕИС УФХД ПК",
+        "position": {
+          "start": 0,
+          "end": 11
+        },
+        "category": "information_system",
+        "confidence": 0.95,
+        "source": "nlp_service",
+        "method": "spaced_abbreviation",
+        "uuid": "0567224f-9ed0-4c45-bd27-213e970b8631"
+      },
+      {
+        "block_id": "paragraph_4",
+        "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "position": {
+          "start": 92,
+          "end": 213
+        },
+        "category": "information_system",
+        "confidence": 0.8,
+        "source": "nlp_service",
+        "method": "information_system_regex",
+        "uuid": "bf750b9a-ccc3-44b6-8b0a-d812c7b3f447"
+      },
+      {
+        "block_id": "paragraph_4",
+        "original_value": "Государственный контракт от 14 августа 2023 г. № 13/ОК-2023",
+        "position": {
+          "start": 0,
+          "end": 59
+        },
+        "category": "contract_number",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "regex",
+        "uuid": "caf8054a-5dfe-414f-ab57-2155452c32d0"
+      },
+      {
+        "block_id": "table_1",
+        "original_value": "В. В. Евтушенко",
+        "position": {
+          "start": 159,
+          "end": 174
+        },
+        "category": "person_name",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "custom_matcher",
+        "uuid": "b231de24-78d7-4ad4-bd9a-5ba34423d554"
+      },
+      {
+        "block_id": "table_1",
+        "original_value": "ГБУ ПК «Центр информационного развития Пермского края»",
+        "position": {
+          "start": 83,
+          "end": 137
+        },
+        "category": "organization",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "regex",
+        "uuid": "5cef6d0f-78aa-4e9d-8960-19d6dc033a61"
+      },
+      {
+        "block_id": "table_2",
+        "original_value": "Общество с ограниченной ответственностью «КАМА Технологии»",
+        "position": {
+          "start": 485,
+          "end": 543
+        },
+        "category": "organization",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "regex",
+        "uuid": "5efdb9f1-b856-4ab1-bf3f-50c97c6aad9b"
+      },
+      {
+        "block_id": "table_2",
+        "original_value": "ЕИС УФХД ПК",
+        "position": {
+          "start": 607,
+          "end": 618
+        },
+        "category": "information_system",
+        "confidence": 0.95,
+        "source": "nlp_service",
+        "method": "spaced_abbreviation",
+        "uuid": "ac6ed712-761e-411a-851f-b8cdc844f4d5"
+      },
+      {
+        "block_id": "table_2",
+        "original_value": "ЕИС УФХД ПК",
+        "position": {
+          "start": 908,
+          "end": 919
+        },
+        "category": "information_system",
+        "confidence": 0.95,
+        "source": "nlp_service",
+        "method": "spaced_abbreviation",
+        "uuid": "ae2b681d-8dde-49a5-8819-f13603cc1a93"
+      },
+      {
+        "block_id": "table_2",
+        "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "position": {
+          "start": 303,
+          "end": 424
+        },
+        "category": "information_system",
+        "confidence": 0.8,
+        "source": "nlp_service",
+        "method": "information_system_regex",
+        "uuid": "91bda9b0-a7e7-4f42-8940-a7150a5f476e"
+      },
+      {
+        "block_id": "table_2",
+        "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "position": {
+          "start": 1396,
+          "end": 1517
+        },
+        "category": "information_system",
+        "confidence": 0.8,
+        "source": "nlp_service",
+        "method": "information_system_regex",
+        "uuid": "c4c167e7-0ee7-4ed7-b09a-dce4d7f39ce5"
+      },
+      {
+        "block_id": "table_2",
+        "original_value": "Государственному контракту от 14 августа 2023 г. № 13/ОК-2023",
+        "position": {
+          "start": 209,
+          "end": 270
+        },
+        "category": "contract_number",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "regex",
+        "uuid": "c59b6705-dfcb-4bff-90bf-5dae61e77537"
+      },
+      {
+        "block_id": "table_2",
+        "original_value": "Контракту от 14 августа 2023 г. № 13/ОК-2023",
+        "position": {
+          "start": 1594,
+          "end": 1638
+        },
+        "category": "contract_number",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "regex",
+        "uuid": "a4340b16-2a81-440e-be98-f4f02a550aab"
+      },
+      {
+        "block_id": "paragraph_16",
+        "original_value": "Единая информационная система управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "position": {
+          "start": 29,
+          "end": 150
+        },
+        "category": "information_system",
+        "confidence": 0.8,
+        "source": "nlp_service",
+        "method": "information_system_regex",
+        "uuid": "74571edd-37da-448a-8b45-d8f217afb1a6"
+      },
+      {
+        "block_id": "paragraph_17",
+        "original_value": "ЕИС УФХД ПК",
+        "position": {
+          "start": 30,
+          "end": 41
+        },
+        "category": "information_system",
+        "confidence": 0.95,
+        "source": "nlp_service",
+        "method": "spaced_abbreviation",
+        "uuid": "7e4555f4-f085-4757-89a7-e46070c168b6"
+      },
+      {
+        "block_id": "paragraph_18",
+        "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "position": {
+          "start": 126,
+          "end": 247
+        },
+        "category": "information_system",
+        "confidence": 0.8,
+        "source": "nlp_service",
+        "method": "information_system_regex",
+        "uuid": "4a677d4d-f1ec-4872-8596-48e43884b778"
+      },
+      {
+        "block_id": "paragraph_18",
+        "original_value": "Государственного контракта от 14 августа 2023 г. № 13/ОК-2023",
+        "position": {
+          "start": 32,
+          "end": 93
+        },
+        "category": "contract_number",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "regex",
+        "uuid": "b48cc37a-1c33-4dff-9023-7e5572f7e566"
+      },
+      {
+        "block_id": "paragraph_19",
+        "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+        "position": {
+          "start": 105,
+          "end": 226
+        },
+        "category": "information_system",
+        "confidence": 0.8,
+        "source": "nlp_service",
+        "method": "information_system_regex",
+        "uuid": "2455fb6a-ad9d-48d7-ba28-8c53e91f6e42"
+      },
+      {
+        "block_id": "paragraph_19",
+        "original_value": "Контракту от 14 августа 2023 г. № 13/ОК-2023",
+        "position": {
+          "start": 303,
+          "end": 347
+        },
+        "category": "contract_number",
+        "confidence": 1.0,
+        "source": "nlp_service",
+        "method": "regex",
+        "uuid": "33c33c42-aded-4dd7-a5cd-a177a90e4dd4"
+      },
+      {
+        "block_id": "header_sdt_1_0",
+        "original_value": "312822699534",
+        "position": {
+          "start": 33,
+          "end": 45
+        },
+        "category": "inn",
+        "confidence": 0.7,
+        "source": "rule_engine",
+        "method": "regex",
+        "uuid": "7a344d29-0a6b-4937-813f-e79564e5fa26"
+      },
+      {
+        "block_id": "header_1_0",
+        "original_value": "stbok@yandex.ru",
+        "position": {
+          "start": 1,
+          "end": 16
+        },
+        "category": "email",
+        "confidence": 0.98,
+        "source": "rule_engine",
+        "method": "regex",
+        "uuid": "7dfe30c6-a02e-4a69-a7a7-0daead4bc29b"
+      },
+      {
+        "block_id": "header_sdt_2_0",
+        "original_value": "312822699534",
+        "position": {
+          "start": 34,
+          "end": 46
+        },
+        "category": "inn",
+        "confidence": 0.7,
+        "source": "rule_engine",
+        "method": "regex",
+        "uuid": "21ddb28b-439b-4803-87a5-043ce71f75e1"
+      },
+      {
+        "metadata_section": "core",
+        "metadata_property": "description",
+        "original_value": "ЕИСУФХД.13/ОК-2023.3.ПМ.1\n312822699534",
+        "partial_matches": [
+          {
+            "partial_match": "ЕИСУФХД",
+            "uuid": "c1b5e170-4f46-4a4e-8b8b-1c81deb98b72",
+            "category": "information_system"
+          },
+          {
+            "partial_match": "312822699534",
+            "uuid": "21ddb28b-439b-4803-87a5-043ce71f75e1",
+            "category": "inn"
+          }
+        ],
+        "uuid": "c1b5e170-4f46-4a4e-8b8b-1c81deb98b72",
+        "category": "information_system",
+        "confidence": 0.8,
+        "source": "metadata_core_partial"
+      }
+    ]
+  },
+  "replacements": [
+    {
+      "uuid": "5b0e8470-4469-4c66-996e-dd3d69d39836",
+      "category": "information_system",
+      "original_value": "ЕИСУФХД",
+      "block_id": "header_sdt_1_0",
+      "position": {
+        "start": 7,
+        "end": 14
+      },
+      "confidence": 0.9
+    },
+    {
+      "uuid": "c1b5e170-4f46-4a4e-8b8b-1c81deb98b72",
+      "category": "information_system",
+      "original_value": "ЕИСУФХД",
+      "block_id": "header_sdt_2_0",
+      "position": {
+        "start": 8,
+        "end": 15
+      },
+      "confidence": 0.9
+    },
+    {
+      "uuid": "b2359de6-f2f8-490e-a723-630a9b488f8a",
+      "category": "organization",
+      "original_value": "МИНИСТЕРСТВО ИНФОРМАЦИОННОГО РАЗВИТИЯ И СВЯЗИ",
+      "block_id": "paragraph_0",
+      "position": {
+        "start": 0,
+        "end": 45
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "8182f57e-4df3-49ec-b0f3-6efe5ea98ef6",
+      "category": "person_name",
+      "original_value": "К. С. Мясников",
+      "block_id": "table_0",
+      "position": {
+        "start": 233,
+        "end": 247
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "cb9ea865-6f12-4c68-84fd-5fd303c3052a",
+      "category": "person_name",
+      "original_value": "А. С. Щукина",
+      "block_id": "table_0",
+      "position": {
+        "start": 195,
+        "end": 207
+      },
+      "confidence": 0.7
+    },
+    {
+      "uuid": "6422d4ad-e581-4421-9529-48d6418f9a19",
+      "category": "organization",
+      "original_value": "Министерства информационного развития и связи Пермского края",
+      "block_id": "table_0",
+      "position": {
+        "start": 63,
+        "end": 123
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "df87b4b2-a9b4-44f7-bbe6-ef4d0d3f6d7c",
+      "category": "organization",
+      "original_value": "ООО «КАМА Технологии»",
+      "block_id": "table_0",
+      "position": {
+        "start": 150,
+        "end": 171
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "86c2e8bf-2eb7-4c15-8d5e-a4f4b9885345",
+      "category": "information_system",
+      "original_value": "ЕДИНАЯ ИНФОРМАЦИОННАЯ СИСТЕМА УПРАВЛЕНИЯ ФИНАНСОВО-ХОЗЯЙСТВЕННОЙ ДЕЯТЕЛЬНОСТЬЮ ОРГАНИЗАЦИЙ БЮДЖЕТНОЙ СФЕРЫ ПЕРМСКОГО КРАЯ",
+      "block_id": "paragraph_2",
+      "position": {
+        "start": 0,
+        "end": 121
+      },
+      "confidence": 0.8
+    },
+    {
+      "uuid": "0567224f-9ed0-4c45-bd27-213e970b8631",
+      "category": "information_system",
+      "original_value": "ЕИС УФХД ПК",
+      "block_id": "paragraph_3",
+      "position": {
+        "start": 0,
+        "end": 11
+      },
+      "confidence": 0.95
+    },
+    {
+      "uuid": "bf750b9a-ccc3-44b6-8b0a-d812c7b3f447",
+      "category": "information_system",
+      "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+      "block_id": "paragraph_4",
+      "position": {
+        "start": 92,
+        "end": 213
+      },
+      "confidence": 0.8
+    },
+    {
+      "uuid": "caf8054a-5dfe-414f-ab57-2155452c32d0",
+      "category": "contract_number",
+      "original_value": "Государственный контракт от 14 августа 2023 г. № 13/ОК-2023",
+      "block_id": "paragraph_4",
+      "position": {
+        "start": 0,
+        "end": 59
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "b231de24-78d7-4ad4-bd9a-5ba34423d554",
+      "category": "person_name",
+      "original_value": "В. В. Евтушенко",
+      "block_id": "table_1",
+      "position": {
+        "start": 159,
+        "end": 174
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "5cef6d0f-78aa-4e9d-8960-19d6dc033a61",
+      "category": "organization",
+      "original_value": "ГБУ ПК «Центр информационного развития Пермского края»",
+      "block_id": "table_1",
+      "position": {
+        "start": 83,
+        "end": 137
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "5efdb9f1-b856-4ab1-bf3f-50c97c6aad9b",
+      "category": "organization",
+      "original_value": "Общество с ограниченной ответственностью «КАМА Технологии»",
+      "block_id": "table_2",
+      "position": {
+        "start": 485,
+        "end": 543
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "ac6ed712-761e-411a-851f-b8cdc844f4d5",
+      "category": "information_system",
+      "original_value": "ЕИС УФХД ПК",
+      "block_id": "table_2",
+      "position": {
+        "start": 607,
+        "end": 618
+      },
+      "confidence": 0.95
+    },
+    {
+      "uuid": "ae2b681d-8dde-49a5-8819-f13603cc1a93",
+      "category": "information_system",
+      "original_value": "ЕИС УФХД ПК",
+      "block_id": "table_2",
+      "position": {
+        "start": 908,
+        "end": 919
+      },
+      "confidence": 0.95
+    },
+    {
+      "uuid": "91bda9b0-a7e7-4f42-8940-a7150a5f476e",
+      "category": "information_system",
+      "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+      "block_id": "table_2",
+      "position": {
+        "start": 303,
+        "end": 424
+      },
+      "confidence": 0.8
+    },
+    {
+      "uuid": "c4c167e7-0ee7-4ed7-b09a-dce4d7f39ce5",
+      "category": "information_system",
+      "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+      "block_id": "table_2",
+      "position": {
+        "start": 1396,
+        "end": 1517
+      },
+      "confidence": 0.8
+    },
+    {
+      "uuid": "c59b6705-dfcb-4bff-90bf-5dae61e77537",
+      "category": "contract_number",
+      "original_value": "Государственному контракту от 14 августа 2023 г. № 13/ОК-2023",
+      "block_id": "table_2",
+      "position": {
+        "start": 209,
+        "end": 270
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "a4340b16-2a81-440e-be98-f4f02a550aab",
+      "category": "contract_number",
+      "original_value": "Контракту от 14 августа 2023 г. № 13/ОК-2023",
+      "block_id": "table_2",
+      "position": {
+        "start": 1594,
+        "end": 1638
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "74571edd-37da-448a-8b45-d8f217afb1a6",
+      "category": "information_system",
+      "original_value": "Единая информационная система управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+      "block_id": "paragraph_16",
+      "position": {
+        "start": 29,
+        "end": 150
+      },
+      "confidence": 0.8
+    },
+    {
+      "uuid": "7e4555f4-f085-4757-89a7-e46070c168b6",
+      "category": "information_system",
+      "original_value": "ЕИС УФХД ПК",
+      "block_id": "paragraph_17",
+      "position": {
+        "start": 30,
+        "end": 41
+      },
+      "confidence": 0.95
+    },
+    {
+      "uuid": "4a677d4d-f1ec-4872-8596-48e43884b778",
+      "category": "information_system",
+      "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+      "block_id": "paragraph_18",
+      "position": {
+        "start": 126,
+        "end": 247
+      },
+      "confidence": 0.8
+    },
+    {
+      "uuid": "b48cc37a-1c33-4dff-9023-7e5572f7e566",
+      "category": "contract_number",
+      "original_value": "Государственного контракта от 14 августа 2023 г. № 13/ОК-2023",
+      "block_id": "paragraph_18",
+      "position": {
+        "start": 32,
+        "end": 93
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "2455fb6a-ad9d-48d7-ba28-8c53e91f6e42",
+      "category": "information_system",
+      "original_value": "Единой информационной системы управления финансово-хозяйственной деятельностью организаций бюджетной сферы Пермского края",
+      "block_id": "paragraph_19",
+      "position": {
+        "start": 105,
+        "end": 226
+      },
+      "confidence": 0.8
+    },
+    {
+      "uuid": "33c33c42-aded-4dd7-a5cd-a177a90e4dd4",
+      "category": "contract_number",
+      "original_value": "Контракту от 14 августа 2023 г. № 13/ОК-2023",
+      "block_id": "paragraph_19",
+      "position": {
+        "start": 303,
+        "end": 347
+      },
+      "confidence": 1.0
+    },
+    {
+      "uuid": "7a344d29-0a6b-4937-813f-e79564e5fa26",
+      "category": "inn",
+      "original_value": "312822699534",
+      "block_id": "header_sdt_1_0",
+      "position": {
+        "start": 33,
+        "end": 45
+      },
+      "confidence": 0.7
+    },
+    {
+      "uuid": "7dfe30c6-a02e-4a69-a7a7-0daead4bc29b",
+      "category": "email",
+      "original_value": "stbok@yandex.ru",
+      "block_id": "header_1_0",
+      "position": {
+        "start": 1,
+        "end": 16
+      },
+      "confidence": 0.98
+    },
+    {
+      "uuid": "21ddb28b-439b-4803-87a5-043ce71f75e1",
+      "category": "inn",
+      "original_value": "312822699534",
+      "block_id": "header_sdt_2_0",
+      "position": {
+        "start": 34,
+        "end": 46
+      },
+      "confidence": 0.7
+    },
+    {
+      "uuid": "c1b5e170-4f46-4a4e-8b8b-1c81deb98b72",
+      "category": "information_system",
+      "original_value": "ЕИСУФХД.13/ОК-2023.3.ПМ.1\n312822699534",
+      "block_id": "",
+      "position": {},
+      "confidence": 0.8
+    }
+  ]
+}

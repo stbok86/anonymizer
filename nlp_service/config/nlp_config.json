@@ -100,7 +100,6 @@
         "priority_order": [1, 2, 3, 4],
         "strategy": "best_confidence",
         "fallback_enabled": true,
-        "max_results": 5,
         "method_settings": {
           "spacy_ner": {
             "min_confidence": 0.8,
@@ -125,7 +124,6 @@
         "priority_order": [1, 3, 2],
         "strategy": "combine_all",
         "fallback_enabled": false,
-        "max_results": 3,
         "method_settings": {
           "spacy_ner": {
             "min_confidence": 0.8,
@@ -144,7 +142,6 @@
         "priority_order": [1, 2],
         "strategy": "first_match",
         "fallback_enabled": false,
-        "max_results": 2,
         "method_settings": {
           "phrase_matcher": {
             "min_confidence": 0.8
@@ -159,7 +156,6 @@
         "priority_order": [1, 2],
         "strategy": "combine_all",
         "fallback_enabled": true,
-        "max_results": 5,
         "method_settings": {
           "regex": {
             "min_confidence": 0.8
@@ -174,7 +170,6 @@
         "priority_order": [1, 2, 3],
         "strategy": "hybrid_government",
         "fallback_enabled": true,
-        "max_results": 5,
         "method_settings": {
           "phrase_matcher": {
             "min_confidence": 0.8
@@ -192,7 +187,6 @@
         "priority_order": [1],
         "strategy": "information_system",
         "fallback_enabled": true,
-        "max_results": 100,
         "method_settings": {
           "spacy_ner": {
             "min_confidence": 0.7,
@@ -209,7 +203,6 @@
         "priority_order": [1, 2],
         "strategy": "contract_number",
         "fallback_enabled": true,
-        "max_results": 5,
         "method_settings": {
           "regex": {
             "min_confidence": 0.8
@@ -225,13 +218,24 @@
         "priority_order": [1, 2],
         "strategy": "best_confidence",
         "fallback_enabled": true,
-        "max_results": 10,
         "method_settings": {
           "regex": {
             "min_confidence": 0.85
           },
           "context_matcher": {
             "min_confidence": 0.75
+          }
+        }
+      }
+      ,
+      "website_url": {
+        "enabled_methods": ["regex"],
+        "priority_order": [1],
+        "strategy": "combine_all",
+        "fallback_enabled": false,
+        "method_settings": {
+          "regex": {
+            "min_confidence": 0.7
           }
         }
       }

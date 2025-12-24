@@ -29,7 +29,7 @@ class RuleEngineAdapter:
         Returns:
             Словарь с паттернами по категориям
         """
-        print(f"🔍 [INFO] Загружаем паттерны из: {self.patterns_file}")
+        print(f"[INFO] Загружаем паттерны из: {self.patterns_file}")
         
         # Инициализируем пустой словарь паттернов
         patterns = {}
@@ -42,7 +42,7 @@ class RuleEngineAdapter:
                 
                 # Проверяем существование файла
                 if not os.path.exists(self.patterns_file):
-                    print(f"❌ [ERROR] Файл паттернов не найден: {self.patterns_file}")
+                    print(f"[ERROR] Файл паттернов не найден: {self.patterns_file}")
                     # print(f"🔍 [DEBUG] Проверяем относительный путь...")
                     # Пробуем найти файл относительно текущего модуля
                     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -52,9 +52,9 @@ class RuleEngineAdapter:
                     
                     if os.path.exists(absolute_path):
                         self.patterns_file = absolute_path
-                        print(f"✅ [SUCCESS] Файл найден по пути: {self.patterns_file}")
+                        print(f"[SUCCESS] Файл найден по пути: {self.patterns_file}")
                     else:
-                        print(f"❌ [ERROR] Файл не найден и по относительному пути: {absolute_path}")
+                        print(f"[ERROR] Файл не найден и по относительному пути: {absolute_path}")
                         # print("🔍 [DEBUG] Используем только встроенные паттерны")
                         return patterns
                 
@@ -67,20 +67,20 @@ class RuleEngineAdapter:
                     # print(f"🔍 [DEBUG] Файл {self.patterns_file} не является валидным Excel, пробуем как CSV...")
                     try:
                         df = pd.read_csv(self.patterns_file)
-                        print(f"✅ [SUCCESS] Загружены паттерны из файла {self.patterns_file} как CSV")
+                        print(f"[SUCCESS] Загружены паттерны из файла {self.patterns_file} как CSV")
                     except Exception as csv_e:
-                        print(f"❌ [ERROR] Не удалось прочитать как CSV: {csv_e}")
+                        print(f"[ERROR] Не удалось прочитать как CSV: {csv_e}")
                         df = None
                 elif file_ext == '.csv':
                     # print(f"🔍 [DEBUG] Загружаем CSV файл...")
                     df = pd.read_csv(self.patterns_file)
-                    print(f"✅ [SUCCESS] Загружены паттерны из CSV файла: {self.patterns_file}")
+                    print(f"[SUCCESS] Загружены паттерны из CSV файла: {self.patterns_file}")
                 elif file_ext in ['.xlsx', '.xls']:
                     # print(f"🔍 [DEBUG] Загружаем Excel файл...")
                     df = pd.read_excel(self.patterns_file)
-                    print(f"✅ [SUCCESS] Загружены паттерны из Excel файла: {self.patterns_file}")
+                    print(f"[SUCCESS] Загружены паттерны из Excel файла: {self.patterns_file}")
                 else:
-                    print(f"❌ [ERROR] Неподдерживаемый формат файла: {file_ext}")
+                    print(f"[ERROR] Неподдерживаемый формат файла: {file_ext}")
                     df = None
                 
                 if df is not None:
@@ -109,27 +109,27 @@ class RuleEngineAdapter:
                             })
                             patterns_added += 1
                     
-                    print(f"✅ [SUCCESS] Добавлено {patterns_added} паттернов из файла")
+                    print(f"[SUCCESS] Добавлено {patterns_added} паттернов из файла")
                     # print(f"🔍 [DEBUG] Итоговое количество категорий: {len(patterns)}")
                     # for category, patterns_list in patterns.items():
                     #     print(f"🔍 [DEBUG]   {category}: {len(patterns_list)} правил")
                         
             else:
                 if not self.patterns_file:
-                    print(f"❌ [ERROR] Путь к файлу паттернов не указан")
+                    print(f"[ERROR] Путь к файлу паттернов не указан")
                 if pd is None:
-                    print(f"❌ [ERROR] Pandas не доступен")
+                    print(f"[ERROR] Pandas не доступен")
                 
-                print("❌ [ERROR] Встроенные паттерны удалены! Все правила должны быть в XLSX файле!")
-                print("🚨 [ERROR] Система не может работать без файла паттернов!")
+                print("[ERROR] Встроенные паттерны удалены! Все правила должны быть в XLSX файле!")
+                print("[ERROR] Система не может работать без файла паттернов!")
                 return {}
                     
         except Exception as e:
-            print(f"❌ [ERROR] Не удалось загрузить паттерны из файла {self.patterns_file}: {e}")
+            print(f"[ERROR] Не удалось загрузить паттерны из файла {self.patterns_file}: {e}")
             import traceback
             traceback.print_exc()
-            print("❌ [ERROR] Встроенные паттерны удалены! Все правила должны быть в XLSX файле!")
-            print("🚨 [ERROR] Система не может работать без файла паттернов!")
+            print("[ERROR] Встроенные паттерны удалены! Все правила должны быть в XLSX файле!")
+            print("[ERROR] Система не может работать без файла паттернов!")
             
             # Возвращаем пустой словарь - система должна требовать корректный файл
             return {}
@@ -290,7 +290,7 @@ class RuleEngineAdapter:
         
         matches.sort(key=match_priority, reverse=True)
         
-        print(f"🔍 [DEBUG] Сортировка совпадений по приоритету:")
+        print(f"[DEBUG] Сортировка совпадений по приоритету:")
         for i, match in enumerate(matches):
             value = match.get('original_value', '')
             digit_length = len(''.join(filter(str.isdigit, value)))
@@ -306,11 +306,11 @@ class RuleEngineAdapter:
                 # Первое совпадение для этой позиции - принимаем
                 seen_positions[pos_key] = match
                 unique_matches.append(match)
-                print(f"✅ [DEBUG] Принято: {match.get('category', 'unknown').upper()} '{match.get('original_value', '')}' (позиция {pos_key})")
+                print(f"[DEBUG] Принято: {match.get('category', 'unknown').upper()} '{match.get('original_value', '')}' (позиция {pos_key})")
             else:
                 # Уже есть совпадение для этой позиции - отклоняем
                 existing = seen_positions[pos_key]
-                print(f"❌ [DEBUG] Отклонено: {match.get('category', 'unknown').upper()} '{match.get('original_value', '')}' (дубликат {existing.get('category', 'unknown').upper()})")
+                print(f"[DEBUG] Отклонено: {match.get('category', 'unknown').upper()} '{match.get('original_value', '')}' (дубликат {existing.get('category', 'unknown').upper()})")
         
         return unique_matches
     
