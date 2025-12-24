@@ -8,6 +8,9 @@ __pycache__/
 # Virtual Environments
 env/
 venv/
+
+# Output files
+Output/
 venv_*/
 ENV/
 env.bak/
